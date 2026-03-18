@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import { Test } from "forge-std/Test.sol";
+import { IPerpEngine } from "src/IPerpEngine.sol";
+
+contract IPerpEngineTest is Test {
+    function test_functionSelectors() public pure {
+        assertEq(
+            IPerpEngine.openPosition.selector,
+            bytes4(keccak256("openPosition(bool,uint256,uint256)"))
+        );
+        assertEq(IPerpEngine.closePosition.selector, bytes4(keccak256("closePosition(uint256)")));
+        assertEq(IPerpEngine.liquidate.selector, bytes4(keccak256("liquidate(uint256)")));
+        assertEq(IPerpEngine.getPosition.selector, bytes4(keccak256("getPosition(uint256)")));
+    }
+
+    function test_positionStructLayout() public pure {
+        IPerpEngine.Position memory pos = IPerpEngine.Position({
+            trader: address(1),
+            isLong: true,
+            collateral: 100e6,
+            leverage: 10,
+            entryPrice: 2000e8,
+            timestamp: 1000,
+            isOpen: true
+        });
+        assertEq(pos.trader, address(1));
+        assertTrue(pos.isLong);
+        assertEq(pos.collateral, 100e6);
+        assertEq(pos.leverage, 10);
+        assertEq(pos.entryPrice, 2000e8);
+        assertEq(pos.timestamp, 1000);
+        assertTrue(pos.isOpen);
+    }
+}

@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "echo 'stub: replace when forge build is wired'",
-    "lint": "echo 'stub: replace when forge fmt is wired'",
-    "test": "echo 'stub: replace when forge test is wired'",
-    "format": "echo 'stub: replace when forge fmt is wired'",
-    "clean": "echo 'stub: replace with forge clean'"
+    "build": "forge build",
+    "lint": "forge fmt --check",
+    "test": "forge test -vvv",
+    "format": "forge fmt",
+    "clean": "forge clean"
   }
 }
