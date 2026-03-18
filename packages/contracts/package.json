@@ -1,0 +1,12 @@
+{
+  "name": "@one-tap/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "echo 'stub: replace when forge build is wired'",
+    "lint": "echo 'stub: replace when forge fmt is wired'",
+    "test": "echo 'stub: replace when forge test is wired'",
+    "format": "echo 'stub: replace when forge fmt is wired'",
+    "clean": "echo 'stub: replace with forge clean'"
+  }
+}

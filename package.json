@@ -1,0 +1,24 @@
+{
+  "name": "one-tap-trading",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Gamified trading web app on MegaETH",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "turbo run format",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "turbo": "2.8.18"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.8.0"
+}
