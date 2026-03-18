@@ -1,0 +1,13 @@
+{
+  "name": "@one-tap/indexer",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "echo 'stub: replace when cargo build is wired'",
+    "dev": "echo 'stub: replace when cargo run is wired'",
+    "lint": "echo 'stub: replace when clippy is wired'",
+    "test": "echo 'stub: replace when cargo test is wired'",
+    "format": "echo 'stub: replace when cargo fmt is wired'",
+    "clean": "echo 'stub: replace with cargo clean'"
+  }
+}

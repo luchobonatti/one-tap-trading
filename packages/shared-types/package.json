@@ -1,0 +1,13 @@
+{
+  "name": "@one-tap/shared-types",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "generate": "echo 'stub: replace when wagmi CLI is set up'",
+    "build": "echo 'stub: replace when tsconfig is set up'",
+    "lint": "echo 'stub: replace when oxlint is set up'",
+    "typecheck": "echo 'stub: replace when tsconfig is set up'",
+    "format": "echo 'stub: replace when oxfmt is set up'",
+    "clean": "echo 'stub: replace with rm of generated/'"
+  }
+}
