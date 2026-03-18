@@ -50,12 +50,22 @@
     },
     "@one-tap/shared-types#generate": {
       "dependsOn": ["@one-tap/contracts#build"],
-      "outputs": ["src/generated/**"],
+      "outputs": ["src/generated.ts"],
       "cache": true,
       "inputs": [
         "../contracts/out/**/*.json",
         "wagmi.config.ts"
       ]
+    },
+    "@one-tap/shared-types#build": {
+      "dependsOn": ["@one-tap/shared-types#generate", "^build"],
+      "outputs": ["dist/**"],
+      "cache": true
+    },
+    "@one-tap/shared-types#typecheck": {
+      "dependsOn": ["@one-tap/shared-types#generate"],
+      "cache": true,
+      "outputs": []
     },
     "@one-tap/web#build": {
       "dependsOn": ["^build", "@one-tap/shared-types#generate"],

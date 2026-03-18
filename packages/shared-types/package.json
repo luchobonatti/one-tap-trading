@@ -2,12 +2,25 @@
   "name": "@one-tap/shared-types",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "generate": "echo 'stub: replace when wagmi CLI is set up'",
-    "build": "echo 'stub: replace when tsconfig is set up'",
+    "generate": "wagmi generate",
+    "build": "tsc",
     "lint": "echo 'stub: replace when oxlint is set up'",
-    "typecheck": "echo 'stub: replace when tsconfig is set up'",
+    "typecheck": "tsc --noEmit",
     "format": "echo 'stub: replace when oxfmt is set up'",
-    "clean": "echo 'stub: replace with rm of generated/'"
+    "clean": "rm -f src/generated.ts && trash dist"
+  },
+  "devDependencies": {
+    "@wagmi/cli": "2.10.0",
+    "typescript": "5.9.3"
   }
 }
