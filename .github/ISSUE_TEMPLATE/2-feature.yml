@@ -1,0 +1,68 @@
+name: Feature
+description: Propose a new feature or enhancement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening a feature request, please check if a similar one already exists.
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User story / Problem statement
+      description: Who needs this and why? A user story format works well, but a clear problem statement is just as good.
+      placeholder: |
+        As a [role], I want [goal], so that [benefit].
+
+        — or —
+
+        Currently, ... This is a problem because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior or approach.
+      placeholder: What should happen? How should it work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Testable conditions that define "done". These will be mirrored in the PR checklist.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you explored and why they were discarded.
+    validations:
+      required: false
+
+  - type: textarea
+    id: technical-notes
+    attributes:
+      label: Technical notes
+      description: Architecture considerations, dependencies, migration concerns, or anything the implementer should know.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, screenshots, references, or related issues.
+    validations:
+      required: false
