@@ -24,7 +24,7 @@ One Tap Trading is a gamified, mobile-first trading web app on MegaETH. Users ta
 ### Backend / Indexer (`apps/indexer/`)
 
 - **Language:** Rust (2021 edition)
-- **Framework:** Axum 0.7 + Tokio (multi-threaded runtime)
+- **Framework:** Axum 0.8 + Tokio (multi-threaded runtime)
 - **Middleware:** tower-http (CORS, logging, compression)
 - **Linting:** clippy pedantic with panic prevention lints (see Cargo.toml)
 - **Formatting:** cargo fmt
