@@ -1,0 +1,43 @@
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+    { id = "check-added-large-files", args = ["--maxkb=500"] },
+    { id = "check-merge-conflict" },
+]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "oxlint"
+name = "oxlint (TypeScript)"
+entry = "npx oxlint"
+language = "system"
+types = ["ts", "tsx"]
+pass_filenames = true
+
+[[repos.hooks]]
+id = "cargo-fmt"
+name = "cargo fmt (Rust)"
+entry = "cargo fmt --manifest-path apps/indexer/Cargo.toml"
+language = "system"
+types = ["rust"]
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-clippy"
+name = "cargo clippy (Rust)"
+entry = "cargo clippy --manifest-path apps/indexer/Cargo.toml --all-targets --all-features -- -D warnings"
+language = "system"
+types = ["rust"]
+pass_filenames = false
+
+[[repos.hooks]]
+id = "forge-fmt"
+name = "forge fmt (Solidity)"
+entry = "bash -c 'cd packages/contracts && forge fmt'"
+language = "system"
+files = '\.sol$'
+pass_filenames = false
