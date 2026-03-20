@@ -168,9 +168,8 @@ contract PerpEngineFuzzTest is Test {
         );
     }
 
-    /// @dev Bounded-loss invariant: no matter how the price moves, trader payout ≤ collateral + profit,
-    ///      and trader loss never exceeds collateral (payout ≥ 0 is guaranteed by uint256).
-    ///      Exit price bounded ±50% of entry (same reasoning as testFuzz_OpenAndClose).
+    /// @dev Bounded-loss: trader payout ≤ collateral + notional (max possible profit).
+    ///      Exit price bounded ±50% of entry to keep profits within house reserve.
     function testFuzz_BoundedLossOnClose(
         bool isLong,
         uint256 collateralSeed,
@@ -183,16 +182,25 @@ contract PerpEngineFuzzTest is Test {
         uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8);
         uint256 exitPrice = bound(exitPriceSeed, entryPrice / 2, entryPrice * 3 / 2);
 
-        _open(isLong, collateral, leverage, entryPrice);
+        uint256 posId = _open(isLong, collateral, leverage, entryPrice);
 
         feed.setPrice(int256(exitPrice));
+        uint256 traderBefore = usdc.balanceOf(trader);
         vm.prank(trader);
-        engine.closePosition(1, _bounds(exitPrice));
+        engine.closePosition(posId, _bounds(exitPrice));
 
-        // Loss is bounded: trader balance is ≥ 0 (always true for uint256).
-        // Trader can never receive negative USDC.
-        // Additionally, solvency buffer must be non-negative.
-        assertGe(settlement.solvencyBuffer(), 0, "solvency buffer never negative");
+        uint256 payout = usdc.balanceOf(trader) - traderBefore;
+
+        // Real bounded-loss check: payout ≤ collateral + notional (max 100% profit).
+        uint256 notional = collateral * leverage;
+        assertLe(payout, collateral + notional, "payout bounded by collateral + notional");
+
+        // Solvency buffer matches actual USDC held.
+        assertEq(
+            settlement.solvencyBuffer(),
+            usdc.balanceOf(address(settlement)),
+            "solvency buffer must match balance"
+        );
     }
 
     /// @dev Stale oracle edge case: price must be fresh for open.
