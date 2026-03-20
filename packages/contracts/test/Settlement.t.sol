@@ -244,15 +244,62 @@ contract SettlementTest is Test {
         assertEq(settlement.solvencyBuffer(), 120e6);
     }
 
+    // ─── recover ─────────────────────────────────────────────────────────────
+
+    function test_RecoverSendsStrayTokensToOwner() public {
+        // Simulate a direct USDC transfer to Settlement (bypassing depositCollateral)
+        usdc.mint(address(settlement), ONE_USDC);
+
+        settlement.recover(address(usdc), ONE_USDC);
+
+        assertEq(usdc.balanceOf(owner), ONE_USDC);
+        assertEq(usdc.balanceOf(address(settlement)), 0);
+    }
+
+    function test_RecoverRevertsForNonOwner() public {
+        usdc.mint(address(settlement), ONE_USDC);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger)
+        );
+        vm.prank(stranger);
+        settlement.recover(address(usdc), ONE_USDC);
+    }
+
     // ─── Fuzz ────────────────────────────────────────────────────────────────
 
+    /// @dev Any positive deposit: totalCollateral and solvencyBuffer increase by exact amount.
+    function testFuzz_DepositCollateral(uint256 amount) public {
+        amount = bound(amount, 1, type(uint128).max);
+        _mintAndApprove(alice, amount);
+        vm.prank(engine);
+        settlement.depositCollateral(alice, amount);
+
+        assertEq(settlement.totalCollateral(), amount);
+        assertEq(settlement.solvencyBuffer(), amount);
+        assertEq(usdc.balanceOf(address(settlement)), amount);
+    }
+
+    /// @dev Any positive reserve top-up: houseReserve and solvencyBuffer increase by exact amount.
+    function testFuzz_FundHouseReserve(uint256 amount) public {
+        amount = bound(amount, 1, type(uint128).max);
+        usdc.mint(owner, amount);
+        usdc.approve(address(settlement), amount);
+        settlement.fundHouseReserve(amount);
+
+        assertEq(settlement.houseReserve(), amount);
+        assertEq(settlement.solvencyBuffer(), amount);
+        assertEq(usdc.balanceOf(address(settlement)), amount);
+    }
+
     /// @dev Any deposit + reserve combination: payout up to buffer succeeds.
-    function testFuzz_PayoutUpToBuffer(uint128 depositAmt, uint128 reserveAmt, uint128 payoutAmt)
+    ///      payoutAmt kept as uint256 to avoid truncation when buffer > type(uint128).max.
+    function testFuzz_PayoutUpToBuffer(uint128 depositAmt, uint128 reserveAmt, uint256 payoutAmt)
         public
     {
         vm.assume(depositAmt > 0);
         uint256 buffer = uint256(depositAmt) + uint256(reserveAmt);
-        payoutAmt = uint128(bound(payoutAmt, 1, buffer));
+        vm.assume(buffer > 0);
+        payoutAmt = bound(payoutAmt, 1, buffer);
 
         _depositAs(alice, depositAmt);
         if (reserveAmt > 0) _fundReserve(reserveAmt);

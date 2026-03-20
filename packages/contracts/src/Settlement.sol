@@ -56,6 +56,8 @@ contract Settlement is ISettlement, Ownable {
     /// @inheritdoc ISettlement
     /// @dev Pulls USDC from `trader` directly — the trader must have approved this
     ///      contract for at least `amount` before the engine calls this function.
+    ///      Assumes standard ERC-20 transfer semantics (no fee-on-transfer). If a
+    ///      fee-on-transfer token is ever used, totalCollateral may overstate actual balance.
     function depositCollateral(address trader, uint256 amount) external override onlyEngine {
         if (amount == 0) revert ZeroAmount();
         totalCollateral += amount;
@@ -76,6 +78,7 @@ contract Settlement is ISettlement, Ownable {
     // ─── Owner-only ───────────────────────────────────────────────────────────
 
     /// @inheritdoc ISettlement
+    /// @dev Assumes standard ERC-20 transfer semantics (no fee-on-transfer).
     function fundHouseReserve(uint256 amount) external override onlyOwner {
         if (amount == 0) revert ZeroAmount();
         houseReserve += amount;
@@ -89,6 +92,17 @@ contract Settlement is ISettlement, Ownable {
         address old = engine;
         engine = newEngine;
         emit EngineUpdated(old, newEngine);
+    }
+
+    /// @notice Recover ERC-20 tokens sent directly to this contract outside normal flows.
+    /// @dev    Intended for tokens accidentally transferred, or for USDC provably in excess
+    ///         of the solvency buffer. Recovering tracked USDC will desync internal accounting —
+    ///         only call this for tokens that entered via direct transfer, never via
+    ///         depositCollateral or fundHouseReserve.
+    /// @param token  ERC-20 token to recover.
+    /// @param amount Amount to send to the owner.
+    function recover(address token, uint256 amount) external onlyOwner {
+        IERC20(token).safeTransfer(owner(), amount);
     }
 
     // ─── View ─────────────────────────────────────────────────────────────────
