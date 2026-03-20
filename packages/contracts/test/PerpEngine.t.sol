@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import { Test } from "forge-std/Test.sol";
 import { MockPriceFeed } from "src/MockPriceFeed.sol";
 import { MockUSDC } from "src/MockUSDC.sol";
-import { PerpEngine, PositionHealthy } from "src/PerpEngine.sol";
+import { PerpEngine, PositionHealthy, ZeroAddress } from "src/PerpEngine.sol";
 import { PriceOracle } from "src/PriceOracle.sol";
 import { Settlement } from "src/Settlement.sol";
 import { IPerpEngine } from "src/IPerpEngine.sol";
@@ -97,7 +97,8 @@ contract PerpEngineTest is Test {
     }
 
     function test_ConstructorZeroAddressReverts() public {
-        vm.expectRevert(abi.encodeWithSelector(IPerpEngine.Unauthorized.selector, address(0)));
+        // ZeroAddress — not Unauthorized — is the correct error for constructor param validation.
+        vm.expectRevert(ZeroAddress.selector);
         new PerpEngine(address(0), address(settlement), address(usdc));
     }
 
@@ -171,6 +172,33 @@ contract PerpEngineTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IPerpEngine.InvalidLeverage.selector, overMax));
         vm.prank(alice);
         engine.openPosition(true, COLLATERAL, overMax, _tightBounds(PRICE_2K));
+    }
+
+    function test_OpenPositionRevertsUnsafeLeverage() public {
+        // leverage = MAX_SAFE_LEVERAGE + 1 (= 21) makes equity < maintenanceMargin at entry price,
+        // so a keeper can liquidate the position in the same block. Must revert with InvalidLeverage.
+        uint256 unsafeLeverage = engine.MAX_SAFE_LEVERAGE() + 1;
+        _fundAlice(COLLATERAL);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPerpEngine.InvalidLeverage.selector, unsafeLeverage)
+        );
+        vm.prank(alice);
+        engine.openPosition(true, COLLATERAL, unsafeLeverage, _tightBounds(PRICE_2K));
+    }
+
+    function test_OpenPositionAtMaxSafeLeverageNotImmediatelyLiquidatable() public {
+        // leverage = MAX_SAFE_LEVERAGE (20): at entry price, equity = collateral = maintenanceMargin.
+        // The position is at the exact boundary — NOT below — so liquidate must revert PositionHealthy.
+        uint256 maxSafe = engine.MAX_SAFE_LEVERAGE();
+        feed.setPrice(int256(PRICE_2K));
+        _fundAlice(COLLATERAL);
+        vm.prank(alice);
+        uint256 posId = engine.openPosition(true, COLLATERAL, maxSafe, _tightBounds(PRICE_2K));
+
+        // Liquidating at the entry price must fail — position is not underwater.
+        vm.expectRevert(abi.encodeWithSelector(PositionHealthy.selector, posId));
+        vm.prank(keeper);
+        engine.liquidate(posId);
     }
 
     function test_OpenPositionRevertsDeadlineExpired() public {

@@ -30,6 +30,11 @@ contract PerpEngine is IPerpEngine {
     /// @notice Keeper reward as a fraction of collateral in basis points (100 = 1%).
     uint256 public constant KEEPER_REWARD_BPS = 100;
 
+    /// @notice Maximum leverage that does not create a position immediately liquidatable at entry.
+    ///         At entry equity = collateral; maintenanceMargin = collateral × leverage × 5%.
+    ///         Not immediately liquidatable iff: leverage ≤ 10_000 / MAINTENANCE_MARGIN_BPS = 20.
+    uint256 public constant MAX_SAFE_LEVERAGE = 10_000 / MAINTENANCE_MARGIN_BPS;
+
     uint256 private constant BPS_DENOM = 10_000;
 
     // ─── Immutables ───────────────────────────────────────────────────────────
@@ -58,7 +63,7 @@ contract PerpEngine is IPerpEngine {
     /// @param usdc_       MockUSDC (or production USDC) token address.
     constructor(address oracle_, address settlement_, address usdc_) {
         if (oracle_ == address(0) || settlement_ == address(0) || usdc_ == address(0)) {
-            revert Unauthorized(address(0));
+            revert ZeroAddress();
         }
         oracle = IPriceOracle(oracle_);
         settlement = ISettlement(settlement_);
@@ -77,7 +82,12 @@ contract PerpEngine is IPerpEngine {
     ) external override returns (uint256 positionId) {
         // ── Input validation ──────────────────────────────────────────────────
         if (collateral < MIN_COLLATERAL) revert InvalidCollateral(collateral);
+        // Absolute cap first.
         if (leverage == 0 || leverage > MAX_LEVERAGE) revert InvalidLeverage(leverage);
+        // Safety bound: positions must not be immediately liquidatable at the entry price.
+        // At entry equity = collateral; maintenanceMargin = collateral × leverage × 5% / 100%.
+        // Not immediately liquidatable iff leverage × MAINTENANCE_MARGIN_BPS ≤ BPS_DENOM.
+        if (leverage * MAINTENANCE_MARGIN_BPS > BPS_DENOM) revert InvalidLeverage(leverage);
         if (block.timestamp > bounds.deadline) {
             revert DeadlineExpired(bounds.deadline, block.timestamp);
         }
@@ -253,7 +263,12 @@ contract PerpEngine is IPerpEngine {
     }
 }
 
-// ─── Extra error (not in IPerpEngine) ────────────────────────────────────────
+// ─── Extra errors (not in IPerpEngine) ───────────────────────────────────────
 
 /// @notice Thrown when liquidate() is called on a position above maintenance margin.
 error PositionHealthy(uint256 positionId);
+
+/// @notice Thrown when address(0) is passed for a required constructor parameter.
+///         Using a dedicated error (not Unauthorized) since this is parameter validation,
+///         not an access-control failure.
+error ZeroAddress();
