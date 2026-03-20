@@ -37,15 +37,28 @@ contract PriceOracle is IPriceOracle {
     /// @notice Record the current feed price as a TWAP observation.
     /// @dev    Permissionless — any caller can push observations. Reverts on stale or
     ///         invalid feed data so bad prices are never written to the ring buffer.
+    ///         Silent no-op when the feed has not advanced since the last observation
+    ///         (deduplicates same-block spam that could skew the TWAP).
     function recordObservation() external {
         (int256 rawPrice, uint256 updatedAt) = feed.latestAnswer();
+
+        // Guard future timestamps — prevents uint256 underflow panic (Solidity 0.8 checked).
+        if (updatedAt > block.timestamp) revert StalePrice(updatedAt, block.timestamp);
         if (block.timestamp - updatedAt > STALENESS_THRESHOLD) {
             revert StalePrice(updatedAt, block.timestamp);
         }
         if (rawPrice <= 0) revert InvalidPrice(rawPrice);
 
+        // Deduplicate: ignore if feed hasn't advanced since the last recorded observation.
+        if (observationCount > 0) {
+            uint256 lastIdx = (observationIndex + OBSERVATION_COUNT - 1) % OBSERVATION_COUNT;
+            if (observations[lastIdx].timestamp == updatedAt) return;
+        }
+
         uint256 price = uint256(rawPrice);
-        observations[observationIndex] = Observation({ price: price, timestamp: block.timestamp });
+        // Store the feed's own updatedAt so the TWAP window reflects data freshness,
+        // not recording time (which can lag up to STALENESS_THRESHOLD behind).
+        observations[observationIndex] = Observation({ price: price, timestamp: updatedAt });
         observationIndex = (observationIndex + 1) % OBSERVATION_COUNT;
         if (observationCount < OBSERVATION_COUNT) {
             ++observationCount;
@@ -56,6 +69,8 @@ contract PriceOracle is IPriceOracle {
     function getPrice() external view returns (uint256 price, uint256 updatedAt) {
         (int256 rawPrice, uint256 feedUpdatedAt) = feed.latestAnswer();
 
+        // Guard future timestamps — prevents uint256 underflow panic.
+        if (feedUpdatedAt > block.timestamp) revert StalePrice(feedUpdatedAt, block.timestamp);
         if (block.timestamp - feedUpdatedAt > STALENESS_THRESHOLD) {
             revert StalePrice(feedUpdatedAt, block.timestamp);
         }
@@ -67,7 +82,7 @@ contract PriceOracle is IPriceOracle {
         // TWAP sanity check: reject if spot deviates >MAX_DEVIATION from the 30s average.
         // Skipped on first use (observationCount == 0) to allow bootstrapping.
         if (observationCount > 0) {
-            // windowStart computed outside unchecked to prevent silent underflow.
+            // windowStart in checked arithmetic — prevents silent underflow wrap.
             uint256 windowStart = block.timestamp > TWAP_WINDOW ? block.timestamp - TWAP_WINDOW : 0;
 
             uint256 sum;
@@ -75,8 +90,8 @@ contract PriceOracle is IPriceOracle {
             for (uint256 i; i < observationCount; ++i) {
                 Observation memory obs = observations[i];
                 if (obs.timestamp >= windowStart) {
+                    sum += obs.price; // checked: overflow requires ~10 × int256.max prices
                     unchecked {
-                        sum += obs.price;
                         ++count;
                     }
                 }
@@ -86,13 +101,12 @@ contract PriceOracle is IPriceOracle {
             // fail safe rather than return a potentially stale TWAP-validated price.
             if (count == 0) revert InsufficientObservations();
 
-            unchecked {
-                uint256 twap = sum / count;
-                uint256 deviation = price > twap ? price - twap : twap - price;
-                uint256 deviationBps = deviation * BPS_DENOMINATOR / twap;
-                if (deviationBps > MAX_DEVIATION) {
-                    revert PriceDeviationExceedsMax(price, twap, deviationBps);
-                }
+            // Division and deviation math in checked arithmetic.
+            uint256 twap = sum / count;
+            uint256 deviation = price > twap ? price - twap : twap - price;
+            uint256 deviationBps = deviation * BPS_DENOMINATOR / twap;
+            if (deviationBps > MAX_DEVIATION) {
+                revert PriceDeviationExceedsMax(price, twap, deviationBps);
             }
         }
     }

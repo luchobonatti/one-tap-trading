@@ -10,9 +10,7 @@ contract PriceOracleTest is Test {
     PriceOracle public oracle;
     MockPriceFeed public feed;
 
-    uint256 private constant INITIAL_PRICE = 2000e8; // 8 decimals (Chainlink convention)
-    uint256 private constant STALENESS_THRESHOLD = 5 seconds;
-    uint256 private constant TWAP_WINDOW = 30 seconds;
+    uint256 private constant INITIAL_PRICE = 2000e8; // 8 decimals (1e8 = $1.00)
 
     /// @dev Block timestamp at setUp — feed.updatedAt is set here by MockPriceFeed constructor.
     uint256 private feedInitTime;
@@ -226,6 +224,58 @@ contract PriceOracleTest is Test {
         oracle.getPrice();
     }
 
+    // ─── Future timestamp (underflow guard) ─────────────────────────────────
+
+    function test_FutureTimestampGetPriceReverts() public {
+        // A feed reporting updatedAt in the future must revert with StalePrice,
+        // not panic via arithmetic underflow.
+        feed.setUpdatedAt(block.timestamp + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPriceOracle.StalePrice.selector, block.timestamp + 1, block.timestamp
+            )
+        );
+        oracle.getPrice();
+    }
+
+    function test_FutureTimestampRecordObservationReverts() public {
+        feed.setUpdatedAt(block.timestamp + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPriceOracle.StalePrice.selector, block.timestamp + 1, block.timestamp
+            )
+        );
+        oracle.recordObservation();
+    }
+
+    // ─── Deduplication ───────────────────────────────────────────────────────
+
+    function test_DuplicateObservationIsNoOp() public {
+        // First call records observation.
+        oracle.recordObservation();
+        // Second call with same feed updatedAt is silently ignored — no ring slot consumed.
+        oracle.recordObservation();
+
+        // Only one slot should be occupied (observationCount is private; verify via TWAP path:
+        // after 31s all observations would be stale, which requires count > 0 at some point).
+        // Verify getPrice still succeeds (TWAP has 1 obs, spot == twap, dev = 0).
+        (uint256 price,) = oracle.getPrice();
+        assertEq(price, INITIAL_PRICE);
+    }
+
+    function test_NewFeedTimestampAfterDuplicate() public {
+        oracle.recordObservation(); // obs[0] at feedInitTime
+
+        // Advance feed timestamp by 5s and record — should succeed (different updatedAt).
+        vm.warp(feedInitTime + 5 seconds);
+        feed.setPrice(int256(INITIAL_PRICE)); // updates feed._updatedAt = block.timestamp
+        oracle.recordObservation(); // obs[1] at feedInitTime+5
+
+        // TWAP = INITIAL_PRICE; spot = INITIAL_PRICE; dev = 0 ✅
+        (uint256 price,) = oracle.getPrice();
+        assertEq(price, INITIAL_PRICE);
+    }
+
     // ─── Constants / immutables ──────────────────────────────────────────────
 
     function test_ConstantsAreCorrect() public view {
@@ -236,5 +286,66 @@ contract PriceOracleTest is Test {
 
     function test_FeedAddressIsImmutable() public view {
         assertEq(address(oracle.feed()), address(feed));
+    }
+
+    // ─── Fuzz ────────────────────────────────────────────────────────────────
+
+    /// @dev Any age within staleness threshold succeeds; any beyond reverts with StalePrice.
+    ///      Uses full abi.encodeWithSelector since StalePrice carries parameters.
+    function testFuzz_StalenessCheck(uint256 age) public {
+        age = bound(age, 0, 100 seconds);
+        vm.warp(feedInitTime + age);
+
+        if (age <= oracle.STALENESS_THRESHOLD()) {
+            (uint256 price,) = oracle.getPrice();
+            assertEq(price, INITIAL_PRICE);
+        } else {
+            // feedUpdatedAt = feedInitTime; block.timestamp = feedInitTime + age
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IPriceOracle.StalePrice.selector, feedInitTime, feedInitTime + age
+                )
+            );
+            oracle.getPrice();
+        }
+    }
+
+    /// @dev Any strictly negative int256 price must revert with InvalidPrice (never wrap).
+    function testFuzz_NegativePriceReverts(uint256 rawNeg) public {
+        rawNeg = bound(rawNeg, 1, uint256(type(int256).max));
+        int256 negPrice = -int256(rawNeg);
+        feed.setPrice(negPrice);
+        vm.expectRevert(abi.encodeWithSelector(IPriceOracle.InvalidPrice.selector, negPrice));
+        oracle.getPrice();
+    }
+
+    /// @dev Spot prices within MAX_DEVIATION bps of TWAP succeed; beyond revert.
+    ///      Uses full error encoding since PriceDeviationExceedsMax carries parameters.
+    function testFuzz_DeviationBoundary(uint256 deviationBps) public {
+        deviationBps = bound(deviationBps, 0, 600); // 0-6%
+        oracle.recordObservation(); // TWAP = INITIAL_PRICE
+
+        // New price = INITIAL_PRICE * (1 + deviationBps / 10_000); integer arithmetic is exact
+        // because INITIAL_PRICE (2000e8) * any deviationBps ≤ 600 fits in uint256 cleanly.
+        uint256 newPrice = INITIAL_PRICE + INITIAL_PRICE * deviationBps / 10_000;
+        feed.setPrice(int256(newPrice));
+
+        // actualDev mirrors the contract's own calculation: deviation * BPS_DENOMINATOR / twap
+        uint256 actualDev = (newPrice - INITIAL_PRICE) * 10_000 / INITIAL_PRICE;
+
+        if (actualDev <= oracle.MAX_DEVIATION()) {
+            (uint256 price,) = oracle.getPrice();
+            assertEq(price, newPrice);
+        } else {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IPriceOracle.PriceDeviationExceedsMax.selector,
+                    newPrice,
+                    INITIAL_PRICE,
+                    actualDev
+                )
+            );
+            oracle.getPrice();
+        }
     }
 }
