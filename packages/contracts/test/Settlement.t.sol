@@ -38,9 +38,11 @@ contract SettlementTest is Test {
         new Settlement(address(0), engine);
     }
 
-    function test_ConstructorZeroEngineReverts() public {
-        vm.expectRevert(ISettlement.ZeroAddress.selector);
-        new Settlement(address(usdc), address(0));
+    function test_ConstructorZeroEngineAllowed() public {
+        // engine=address(0) is allowed on construction — enables two-step setup.
+        // All engine-only calls revert with Unauthorized until setEngine is called.
+        Settlement s = new Settlement(address(usdc), address(0));
+        assertEq(s.engine(), address(0));
     }
 
     function test_InitialAccountingIsZero() public view {

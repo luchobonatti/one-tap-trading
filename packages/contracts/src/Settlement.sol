@@ -37,9 +37,11 @@ contract Settlement is ISettlement, Ownable {
     // ─── Constructor ──────────────────────────────────────────────────────────
 
     /// @param usdc_   Address of the USDC ERC-20 token (MockUSDC on testnet).
-    /// @param engine_ Address of the authorised PerpEngine.
+    /// @param engine_ Authorised PerpEngine address. May be address(0) to allow deploying
+    ///                Settlement before PerpEngine (two-step setup via setEngine).
+    ///                All engine-only calls revert with Unauthorized until the engine is set.
     constructor(address usdc_, address engine_) Ownable(msg.sender) {
-        if (usdc_ == address(0) || engine_ == address(0)) revert ZeroAddress();
+        if (usdc_ == address(0)) revert ZeroAddress();
         usdc = usdc_;
         engine = engine_;
     }
