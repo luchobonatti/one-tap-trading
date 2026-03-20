@@ -24,11 +24,8 @@ contract IPerpEngineTest is Test {
     }
 
     function test_liquidateSelector() public pure {
-        // liquidate(uint256,(uint256,uint256,uint256))
-        assertEq(
-            IPerpEngine.liquidate.selector,
-            bytes4(keccak256("liquidate(uint256,(uint256,uint256,uint256))"))
-        );
+        // liquidate is permissionless — no PriceBounds (protocol validates at oracle price)
+        assertEq(IPerpEngine.liquidate.selector, bytes4(keccak256("liquidate(uint256)")));
     }
 
     function test_getPositionSelector() public pure {
@@ -65,6 +62,26 @@ contract IPerpEngineTest is Test {
         assertEq(bounds.expectedPrice, 2000e8);
         assertEq(bounds.maxDeviation, 50e8);
         assertEq(bounds.deadline, 9999999999);
+    }
+
+    // ─── Event topics ────────────────────────────────────────────────────────
+
+    function test_eventTopics() public pure {
+        // PositionOpened(uint256 indexed,address indexed,bool,uint256,uint256,uint256)
+        assertEq(
+            IPerpEngine.PositionOpened.selector,
+            bytes32(keccak256("PositionOpened(uint256,address,bool,uint256,uint256,uint256)"))
+        );
+        // PositionClosed(uint256 indexed,address indexed,uint256,int256)
+        assertEq(
+            IPerpEngine.PositionClosed.selector,
+            bytes32(keccak256("PositionClosed(uint256,address,uint256,int256)"))
+        );
+        // PositionLiquidated(uint256 indexed,address indexed,uint256)
+        assertEq(
+            IPerpEngine.PositionLiquidated.selector,
+            bytes32(keccak256("PositionLiquidated(uint256,address,uint256)"))
+        );
     }
 
     // ─── Custom error selectors ──────────────────────────────────────────────

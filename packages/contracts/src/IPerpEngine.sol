@@ -15,18 +15,21 @@ interface IPerpEngine {
         uint256 collateral; // 6-decimal USDC units
         uint256 leverage; // integer multiplier (e.g. 10 = 10×)
         uint256 entryPrice; // 8-decimal oracle price at open
-        uint256 timestamp; // block.timestamp at open
+        uint256 timestamp; // block.timestamp (unix seconds) when the position was opened
         bool isOpen;
     }
 
-    /// @notice Caller-supplied bounds that gate all price-sensitive operations.
+    /// @notice Caller-supplied bounds that gate price-sensitive trader operations.
+    ///         Used by openPosition and closePosition to enforce slippage tolerance.
     ///         The engine reverts if the oracle price falls outside
     ///         [expectedPrice - maxDeviation, expectedPrice + maxDeviation]
     ///         or if block.timestamp > deadline.
+    /// @dev    NOT used by liquidate — liquidation is permissionless and validates
+    ///         the position health at oracle price unconditionally.
     struct PriceBounds {
         uint256 expectedPrice; // 8-decimal mid-price the caller observed off-chain
         uint256 maxDeviation; // max tolerated absolute deviation (8-decimal units)
-        uint256 deadline; // unix timestamp after which the tx is rejected
+        uint256 deadline; // unix timestamp (seconds) after which the tx is rejected
     }
 
     // ─── Events ──────────────────────────────────────────────────────────────
@@ -56,7 +59,8 @@ interface IPerpEngine {
     /// @notice Thrown when block.timestamp has passed the caller's deadline.
     error DeadlineExpired(uint256 deadline, uint256 blockTimestamp);
 
-    /// @notice Thrown when the position does not exist or does not belong to the caller.
+    /// @notice Thrown when the position does not exist, OR when msg.sender is not the owner.
+    ///         The two cases are intentionally indistinguishable to prevent position enumeration.
     error PositionNotFound(uint256 positionId);
 
     /// @notice Thrown when an operation is attempted on a position that is already closed.
@@ -93,10 +97,14 @@ interface IPerpEngine {
 
     /// @notice Liquidate an under-margined position.
     /// @param positionId Position to liquidate.
-    /// @param bounds     Off-chain price bounds used to verify liquidation is valid.
-    function liquidate(uint256 positionId, PriceBounds calldata bounds) external;
+    /// @dev   Permissionless — any keeper may call this. The engine validates the
+    ///        position is actually underwater at the current oracle price. No caller-
+    ///        supplied price bounds: liquidation correctness must be protocol-determined,
+    ///        not subject to liquidator slippage preferences.
+    function liquidate(uint256 positionId) external;
 
     /// @notice Return the full state of a position.
     /// @param positionId Position identifier.
+    /// @dev   Reverts with PositionNotFound if positionId does not exist.
     function getPosition(uint256 positionId) external view returns (Position memory);
 }
