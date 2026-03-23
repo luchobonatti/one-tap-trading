@@ -19,11 +19,15 @@ import { Settlement } from "src/Settlement.sol";
 ///           5. PerpEngine            — depends on PriceOracle, Settlement, MockUSDC
 ///           6. Settlement.setEngine  — wires PerpEngine as the authorised caller
 ///
-///         Required env vars:
+///         Required env vars (see root .env.example):
 ///           MEGAETH_RPC_URL        — RPC endpoint (e.g. https://carrot.megaeth.com/rpc)
 ///           DEPLOYER_PRIVATE_KEY   — hex-encoded private key of the deploying account
 ///
-///         Run:
+///         Setup (one-time, from repo root):
+///           cp .env.example .env        # fill in values
+///           pnpm setup                  # symlinks packages/contracts/.env → root .env
+///
+///         Run (from packages/contracts/):
 ///           forge script script/DeployPhase1.s.sol:DeployPhase1 \
 ///             --rpc-url $MEGAETH_RPC_URL \
 ///             --broadcast \
