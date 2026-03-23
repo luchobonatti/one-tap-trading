@@ -11,6 +11,14 @@ evm_version = "cancun"
 via_ir = false
 ffi = false
 
+[fuzz]
+runs = 10_000
+
+[invariant]
+runs = 64
+depth = 256
+fail_on_revert = false
+
 [fmt]
 line_length = 100
 tab_width = 4
