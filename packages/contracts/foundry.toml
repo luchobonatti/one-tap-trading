@@ -23,6 +23,11 @@ fail_on_revert = false
 [rpc_endpoints]
 carrot = "${MEGAETH_RPC_URL}"
 
+# MegaETH gas model is ~30x mainnet costs — override multiplier for Carrot deploys.
+# Usage: forge script ... --gas-estimate-multiplier 5000
+[profile.megaeth]
+gas_estimate_multiplier = 5000
+
 [fmt]
 line_length = 100
 tab_width = 4

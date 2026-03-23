@@ -31,7 +31,11 @@ import { Settlement } from "src/Settlement.sol";
 ///           forge script script/DeployPhase1.s.sol:DeployPhase1 \
 ///             --rpc-url $MEGAETH_RPC_URL \
 ///             --broadcast \
-///             --verify
+///             --legacy \
+///             --gas-estimate-multiplier 5000
+///
+///         Note: MegaETH Carrot gas costs are ~30x mainnet. The --legacy flag
+///         and 5000 multiplier are required for successful broadcast.
 contract DeployPhase1 is Script {
     /// @notice Initial mock price: ETH at $2 000 (8-decimal).
     int256 private constant INITIAL_PRICE = 2_000e8;
