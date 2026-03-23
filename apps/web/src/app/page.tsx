@@ -1,4 +1,4 @@
-import { iPerpEngineAbi } from "@one-tap/shared-types";
+import { perpEngineAbi, perpEngineAddress } from "@one-tap/shared-types";
 
 export default function HomePage() {
   return (
@@ -8,7 +8,8 @@ export default function HomePage() {
         Gamified perpetual futures on MegaETH
       </p>
       <p className="mt-2 text-sm text-gray-600">
-        {iPerpEngineAbi.length} contract functions loaded
+        {perpEngineAbi.length} contract functions — PerpEngine{" "}
+        {perpEngineAddress[6343]}
       </p>
     </main>
   );
