@@ -24,6 +24,9 @@ coverage/
 # Foundry
 packages/contracts/cache/
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
