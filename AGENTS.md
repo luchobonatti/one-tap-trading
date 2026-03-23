@@ -72,7 +72,7 @@ docs/
 ### Blockchain
 
 - **Network:** MegaETH (EVM L2, 10ms blocks)
-- **Testnet:** Carrot (chain ID 6342)
+- **Testnet:** Carrot (chain ID 6343)
 - **Oracle:** RedStone Bolt (2.4ms push oracle)
 - **Account Abstraction:** ERC-4337 smart wallets + Session Keys
 
