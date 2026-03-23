@@ -48,13 +48,41 @@ contract PerpEngine is IPerpEngine {
     /// @notice USDC token address (used only for ABI exposure / off-chain approval).
     IERC20 public immutable usdc;
 
+    // ─── Packed storage ──────────────────────────────────────────────────────
+
+    /// @dev Internal packed layout — 2 storage slots instead of 6.
+    ///
+    ///      Slot 0 (32 bytes):
+    ///        address trader   (20B) + uint8 leverage (1B) + uint40 timestamp (5B)
+    ///        + bool isLong (1B) + bool isOpen (1B) = 28 bytes
+    ///
+    ///      Slot 1 (32 bytes):
+    ///        uint128 collateral (16B) + uint128 entryPrice (16B) = 32 bytes
+    ///
+    ///      Safe ranges:
+    ///        leverage  → uint8 max 255 (MAX_SAFE_LEVERAGE=20, well within)
+    ///        timestamp → uint40 max 1_099_511_627_775 (year ~36812)
+    ///        collateral→ uint128 max ~3.4×10^38 (>> any realistic USDC amount at 6 decimals)
+    ///        entryPrice→ uint128 max ~3.4×10^38 (>> any realistic price at 8 decimals)
+    struct PackedPosition {
+        // Slot 0
+        address trader;
+        uint8 leverage;
+        uint40 timestamp;
+        bool isLong;
+        bool isOpen;
+        // Slot 1
+        uint128 collateral;
+        uint128 entryPrice;
+    }
+
     // ─── State ────────────────────────────────────────────────────────────────
 
     /// @notice Next position ID to assign. Starts at 1.
     uint256 public nextPositionId;
 
-    /// @dev positionId → Position
-    mapping(uint256 => Position) private _positions;
+    /// @dev positionId → PackedPosition (2 storage slots instead of 6).
+    mapping(uint256 => PackedPosition) private _packed;
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
@@ -97,16 +125,22 @@ contract PerpEngine is IPerpEngine {
         (uint256 oraclePrice,) = oracle.getPrice();
         _checkPriceBounds(oraclePrice, bounds);
 
-        // ── Record position ───────────────────────────────────────────────────
+        // ── Record position (packed into 2 storage slots) ─────────────────────
+        // Safe narrowing casts — revert instead of silent truncation.
+        if (collateral > type(uint128).max) revert SafeCastOverflow();
+        if (oraclePrice > type(uint128).max) revert SafeCastOverflow();
+        if (block.timestamp > type(uint40).max) revert SafeCastOverflow();
+        // leverage is validated above (≤ MAX_SAFE_LEVERAGE = 20, fits uint8).
+
         positionId = nextPositionId++;
-        _positions[positionId] = Position({
+        _packed[positionId] = PackedPosition({
             trader: msg.sender,
+            leverage: uint8(leverage),
+            timestamp: uint40(block.timestamp),
             isLong: isLong,
-            collateral: collateral,
-            leverage: leverage,
-            entryPrice: oraclePrice,
-            timestamp: block.timestamp,
-            isOpen: true
+            isOpen: true,
+            collateral: uint128(collateral),
+            entryPrice: uint128(oraclePrice)
         });
 
         // ── Escrow collateral ─────────────────────────────────────────────────
@@ -120,8 +154,8 @@ contract PerpEngine is IPerpEngine {
 
     /// @inheritdoc IPerpEngine
     function closePosition(uint256 positionId, PriceBounds calldata bounds) external override {
-        Position storage pos = _loadOpen(positionId);
-        if (pos.trader != msg.sender) revert PositionNotFound(positionId);
+        PackedPosition storage pp = _loadOpenPacked(positionId);
+        if (pp.trader != msg.sender) revert PositionNotFound(positionId);
         if (block.timestamp > bounds.deadline) {
             revert DeadlineExpired(bounds.deadline, block.timestamp);
         }
@@ -132,69 +166,83 @@ contract PerpEngine is IPerpEngine {
         _checkPriceBounds(exitPrice, bounds);
 
         // ── PnL & payout ──────────────────────────────────────────────────────
-        int256 pnl =
-            _computePnl(pos.isLong, pos.collateral, pos.leverage, pos.entryPrice, exitPrice);
-        uint256 payoutAmt = _boundedPayout(pos.collateral, pnl);
+        uint256 col = pp.collateral;
+        uint256 lev = pp.leverage;
+        int256 pnl = _computePnl(pp.isLong, col, lev, pp.entryPrice, exitPrice);
+        uint256 payoutAmt = _boundedPayout(col, pnl);
 
-        pos.isOpen = false;
+        pp.isOpen = false;
 
         if (payoutAmt > 0) {
-            settlement.payout(pos.trader, payoutAmt);
+            settlement.payout(pp.trader, payoutAmt);
         }
 
-        emit PositionClosed(positionId, pos.trader, exitPrice, pnl);
+        emit PositionClosed(positionId, pp.trader, exitPrice, pnl);
     }
 
     // ─── liquidate ────────────────────────────────────────────────────────────
 
     /// @inheritdoc IPerpEngine
     function liquidate(uint256 positionId) external override {
-        Position storage pos = _loadOpen(positionId);
+        PackedPosition storage pp = _loadOpenPacked(positionId);
 
         // ── Oracle (no caller-supplied bounds — protocol-determined) ──────────
         // slither-disable-next-line unused-return
         (uint256 liquidationPrice,) = oracle.getPrice();
 
         // ── Eligibility check ─────────────────────────────────────────────────
-        if (!_isLiquidatable(pos, liquidationPrice)) {
+        uint256 col = pp.collateral;
+        uint256 lev = pp.leverage;
+        if (!_isLiquidatable(pp.isLong, col, lev, pp.entryPrice, liquidationPrice)) {
             revert PositionHealthy(positionId);
         }
 
         // ── Compute equity and split payout ───────────────────────────────────
-        int256 pnl = _computePnl(
-            pos.isLong, pos.collateral, pos.leverage, pos.entryPrice, liquidationPrice
-        );
-        uint256 equity = _boundedPayout(pos.collateral, pnl);
+        int256 pnl = _computePnl(pp.isLong, col, lev, pp.entryPrice, liquidationPrice);
+        uint256 equity = _boundedPayout(col, pnl);
 
         // Keeper reward capped to available equity.
-        uint256 keeperReward = (pos.collateral * KEEPER_REWARD_BPS) / BPS_DENOM;
+        uint256 keeperReward = (col * KEEPER_REWARD_BPS) / BPS_DENOM;
         if (keeperReward > equity) keeperReward = equity;
         uint256 traderPayout = equity - keeperReward;
 
-        pos.isOpen = false;
+        pp.isOpen = false;
 
-        if (traderPayout > 0) settlement.payout(pos.trader, traderPayout);
+        if (traderPayout > 0) settlement.payout(pp.trader, traderPayout);
         if (keeperReward > 0) settlement.payout(msg.sender, keeperReward);
 
-        emit PositionLiquidated(positionId, pos.trader, liquidationPrice);
+        emit PositionLiquidated(positionId, pp.trader, liquidationPrice);
     }
 
     // ─── getPosition ──────────────────────────────────────────────────────────
 
     /// @inheritdoc IPerpEngine
     function getPosition(uint256 positionId) external view override returns (Position memory) {
-        Position memory pos = _positions[positionId];
-        if (pos.trader == address(0)) revert PositionNotFound(positionId);
-        return pos;
+        PackedPosition storage pp = _packed[positionId];
+        if (pp.trader == address(0)) revert PositionNotFound(positionId);
+        return _unpack(pp);
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
-    /// @dev Load a position and revert if it is closed or doesn't exist.
-    function _loadOpen(uint256 positionId) internal view returns (Position storage pos) {
-        pos = _positions[positionId];
-        if (pos.trader == address(0)) revert PositionNotFound(positionId);
-        if (!pos.isOpen) revert PositionAlreadyClosed(positionId);
+    /// @dev Load a packed position and revert if it is closed or doesn't exist.
+    function _loadOpenPacked(uint256 positionId) internal view returns (PackedPosition storage pp) {
+        pp = _packed[positionId];
+        if (pp.trader == address(0)) revert PositionNotFound(positionId);
+        if (!pp.isOpen) revert PositionAlreadyClosed(positionId);
+    }
+
+    /// @dev Unpack a PackedPosition into the ABI-compatible Position struct.
+    function _unpack(PackedPosition storage pp) internal view returns (Position memory) {
+        return Position({
+            trader: pp.trader,
+            isLong: pp.isLong,
+            collateral: uint256(pp.collateral),
+            leverage: uint256(pp.leverage),
+            entryPrice: uint256(pp.entryPrice),
+            timestamp: uint256(pp.timestamp),
+            isOpen: pp.isOpen
+        });
     }
 
     /// @dev Revert if oraclePrice falls outside [expected − maxDev, expected + maxDev].
@@ -252,16 +300,17 @@ contract PerpEngine is IPerpEngine {
     /// @dev True when a position's equity is below the maintenance margin threshold.
     ///      Equity = collateral + pnl (signed; floored at 0 is handled by Settlement).
     ///      Maintenance margin = notional × MAINTENANCE_MARGIN_BPS / BPS_DENOM.
-    function _isLiquidatable(Position storage pos, uint256 currentPrice)
-        internal
-        view
-        returns (bool)
-    {
-        uint256 notional = pos.collateral * pos.leverage;
+    function _isLiquidatable(
+        bool isLong,
+        uint256 collateral,
+        uint256 leverage,
+        uint256 entryPrice,
+        uint256 currentPrice
+    ) internal pure returns (bool) {
+        uint256 notional = collateral * leverage;
         uint256 maintenanceMargin = (notional * MAINTENANCE_MARGIN_BPS) / BPS_DENOM;
-        int256 pnl =
-            _computePnl(pos.isLong, pos.collateral, pos.leverage, pos.entryPrice, currentPrice);
-        int256 equity = int256(pos.collateral) + pnl;
+        int256 pnl = _computePnl(isLong, collateral, leverage, entryPrice, currentPrice);
+        int256 equity = int256(collateral) + pnl;
         return equity < int256(maintenanceMargin);
     }
 }
@@ -275,3 +324,6 @@ error PositionHealthy(uint256 positionId);
 ///         Using a dedicated error (not Unauthorized) since this is parameter validation,
 ///         not an access-control failure.
 error ZeroAddress();
+
+/// @notice Thrown when a value overflows during narrowing cast to a packed storage type.
+error SafeCastOverflow();
