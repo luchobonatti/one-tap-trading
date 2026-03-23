@@ -85,7 +85,9 @@ contract PriceOracle is IPriceOracle {
             // windowStart in checked arithmetic — prevents silent underflow wrap.
             uint256 windowStart = block.timestamp > TWAP_WINDOW ? block.timestamp - TWAP_WINDOW : 0;
 
+            // slither-disable-next-line uninitialized-local
             uint256 sum;
+            // slither-disable-next-line uninitialized-local
             uint256 count;
             for (uint256 i; i < observationCount; ++i) {
                 Observation memory obs = observations[i];

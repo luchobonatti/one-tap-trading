@@ -110,3 +110,34 @@ jobs:
           restore-keys: cargo-build-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10  # v1.7.0
+      - run: forge build --build-info --force
+      - name: Run Slither
+        uses: crytic/slither-action@b52cc1cbfee9ca3e8722dd5224299d16c9a6b80f  # v0.4.2
+        id: slither
+        with:
+          target: packages/contracts
+          slither-config: packages/contracts/slither.config.json
+          sarif: slither.sarif
+          fail-on: medium
+          ignore-compile: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@256d634097be96e792d6764f9edaefc4320557b1  # v4
+        if: always()
+        with:
+          sarif_file: slither.sarif

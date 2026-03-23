@@ -1,0 +1,10 @@
+{
+  "filter_paths": "(test/|script/|lib/)",
+  "exclude_dependencies": true,
+  "exclude_informational": true,
+  "exclude_low": true,
+  "detectors_to_exclude": [
+    "solc-version",
+    "naming-convention"
+  ]
+}
