@@ -72,7 +72,7 @@ docs/
 ### Blockchain
 
 - **Network:** MegaETH (EVM L2, 10ms blocks)
-- **Testnet:** Carrot (chain ID 6342)
+- **Testnet:** Carrot (chain ID 6343)
 - **Oracle:** RedStone Bolt (2.4ms push oracle)
 - **Account Abstraction:** ERC-4337 smart wallets + Session Keys
 
@@ -119,3 +119,15 @@ Follow the [7 Rules of a Great Commit Message](https://cbea.ms/git-commit/):
 - Do not skip tests or linting to make a build pass
 - Do not commit generated types (`packages/shared-types/generated/`)
 - When in doubt, ask — don't assume
+
+## Known Gotchas
+
+Non-obvious findings that have burned time before. Full details in [`docs/gotchas.md`](docs/gotchas.md).
+
+- **MegaETH gas is ~30x mainnet** — always use `--legacy --gas-estimate-multiplier 5000` when broadcasting
+- **Chain ID is 6343** (not 6342)
+- **`forge fmt` runs on pre-commit** — first commit always fails; re-stage and recommit
+- **`vm.prank` is consumed by the next call** including view calls inside `expectRevert`
+- **Settlement deploys in two steps** — constructor takes `engine=address(0)`, wire after PerpEngine deploy
+- **`pnpm setup`** creates `packages/contracts/.env → ../../.env` symlink (run once after clone)
+- **`DEPLOYER_PRIVATE_KEY` needs `0x` prefix** — `vm.envUint` rejects bare hex
