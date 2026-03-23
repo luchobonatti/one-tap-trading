@@ -125,6 +125,12 @@ contract PerpEngine is IPerpEngine {
         _checkPriceBounds(oraclePrice, bounds);
 
         // ── Record position (packed into 2 storage slots) ─────────────────────
+        // Safe narrowing casts — revert instead of silent truncation.
+        if (collateral > type(uint128).max) revert SafeCastOverflow();
+        if (oraclePrice > type(uint128).max) revert SafeCastOverflow();
+        if (block.timestamp > type(uint40).max) revert SafeCastOverflow();
+        // leverage is validated above (≤ MAX_SAFE_LEVERAGE = 20, fits uint8).
+
         positionId = nextPositionId++;
         _packed[positionId] = PackedPosition({
             trader: msg.sender,
@@ -315,3 +321,6 @@ error PositionHealthy(uint256 positionId);
 ///         Using a dedicated error (not Unauthorized) since this is parameter validation,
 ///         not an access-control failure.
 error ZeroAddress();
+
+/// @notice Thrown when a value overflows during narrowing cast to a packed storage type.
+error SafeCastOverflow();
