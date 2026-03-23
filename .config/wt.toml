@@ -2,8 +2,10 @@
 submodules = "git submodule update --init --recursive"
 deps = "pnpm install --frozen-lockfile"
 env = """
-if [ -f {{ primary_worktree_path }}/.env ]; then
-    cp {{ primary_worktree_path }}/.env .env
+if [ -f .env ]; then
+    echo ".env already exists, leaving it unchanged"
+elif [ -f "{{ primary_worktree_path }}/.env" ]; then
+    cp "{{ primary_worktree_path }}/.env" .env
     echo "Copied .env from primary worktree"
 elif [ -f .env.example ]; then
     cp .env.example .env
