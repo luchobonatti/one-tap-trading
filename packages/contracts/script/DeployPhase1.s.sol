@@ -20,7 +20,8 @@ import { Settlement } from "src/Settlement.sol";
 ///           6. Settlement.setEngine  — wires PerpEngine as the authorised caller
 ///
 ///         Required env vars:
-///           DEPLOYER_PRIVATE_KEY   — private key of the deploying account
+///           MEGAETH_RPC_URL        — RPC endpoint (e.g. https://carrot.megaeth.com/rpc)
+///           DEPLOYER_PRIVATE_KEY   — hex-encoded private key of the deploying account
 ///
 ///         Run:
 ///           forge script script/DeployPhase1.s.sol:DeployPhase1 \
