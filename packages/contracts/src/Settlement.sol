@@ -63,6 +63,7 @@ contract Settlement is ISettlement, Ownable {
     function depositCollateral(address trader, uint256 amount) external override onlyEngine {
         if (amount == 0) revert ZeroAmount();
         totalCollateral += amount;
+        // slither-disable-next-line arbitrary-send-erc20
         IERC20(usdc).safeTransferFrom(trader, address(this), amount);
         emit CollateralDeposited(trader, amount);
     }

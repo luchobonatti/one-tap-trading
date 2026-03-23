@@ -93,6 +93,7 @@ contract PerpEngine is IPerpEngine {
         }
 
         // ── Oracle validation ─────────────────────────────────────────────────
+        // slither-disable-next-line unused-return
         (uint256 oraclePrice,) = oracle.getPrice();
         _checkPriceBounds(oraclePrice, bounds);
 
@@ -126,6 +127,7 @@ contract PerpEngine is IPerpEngine {
         }
 
         // ── Oracle validation ─────────────────────────────────────────────────
+        // slither-disable-next-line unused-return
         (uint256 exitPrice,) = oracle.getPrice();
         _checkPriceBounds(exitPrice, bounds);
 
@@ -150,6 +152,7 @@ contract PerpEngine is IPerpEngine {
         Position storage pos = _loadOpen(positionId);
 
         // ── Oracle (no caller-supplied bounds — protocol-determined) ──────────
+        // slither-disable-next-line unused-return
         (uint256 liquidationPrice,) = oracle.getPrice();
 
         // ── Eligibility check ─────────────────────────────────────────────────
