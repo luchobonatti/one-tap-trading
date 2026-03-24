@@ -25,6 +25,24 @@ Use `cast estimate --rpc-url $MEGAETH_RPC_URL ...` to get the real on-chain gas 
 
 ---
 
+## Account Abstraction (ERC-4337)
+
+**EntryPoint v0.7 deployed at `0x0000000071727De22E5E9d8BAf0edAc6f37da032` on Carrot.**
+EntryPoint v0.6 is not deployed. Use v0.7 for all AA interactions.
+
+**RIP-7212 P256 precompile not available on Carrot.**
+Passkey (WebAuthn) signature verification requires a software P256.sol verifier (~200k gas) instead of the precompile (~3.5k gas). Session keys use ECDSA (secp256k1) and are unaffected.
+
+**EIP-7966 not available on Carrot.**
+`eth_sendRawTransactionSync` is not supported. Use standard async `eth_sendRawTransaction` and poll for receipts.
+
+**No native ERC-4337 bundler on MegaETH RPC.**
+`eth_sendUserOperation` is not supported on the native MegaETH RPC. Must use an external bundler. Pimlico does not support chain 6343 — investigate Alchemy, Stackup, or deploy a self-hosted bundler.
+
+Full details: [`docs/megaeth-aa-infrastructure.md`](megaeth-aa-infrastructure.md)
+
+---
+
 ## Foundry
 
 **`vm.writeFile` requires explicit `fs_permissions`.**
