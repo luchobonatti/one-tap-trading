@@ -83,21 +83,11 @@ contract SessionKeyValidator is ISessionKeyValidator {
 
     /// @inheritdoc ISessionKeyValidator
     function validateUserOp(bytes calldata userOp, bytes32 userOpHash) external returns (uint256) {
-        // Decode PackedUserOperation
-        address sender;
-        bytes memory callData;
-        bytes memory signature;
+        // Minimum ABI-encoded size: 9 fields × 32 bytes inline + 4 dynamic length words
+        if (userOp.length < 416) return VALIDATION_FAILED;
 
-        // Parse userOp to extract sender, callData, and signature
-        try this._decodeUserOp(userOp) returns (
-            address _sender, bytes memory _callData, bytes memory _sig
-        ) {
-            sender = _sender;
-            callData = _callData;
-            signature = _sig;
-        } catch {
-            return VALIDATION_FAILED;
-        }
+        // Decode PackedUserOperation directly — called only by EntryPoint with valid data
+        (address sender, bytes memory callData, bytes memory signature) = _decodeUserOp(userOp);
 
         // Extract session key from signature (first 20 bytes)
         if (signature.length < 85) return VALIDATION_FAILED;
@@ -176,10 +166,10 @@ contract SessionKeyValidator is ISessionKeyValidator {
         return VALIDATION_SUCCESS;
     }
 
-    /// @notice Helper function to decode PackedUserOperation.
-    /// @dev This is a public function to allow try-catch in validateUserOp.
+    /// @notice Decodes the relevant fields from an ABI-encoded PackedUserOperation.
+    /// @dev Internal — called only after a minimum-length guard in validateUserOp.
     function _decodeUserOp(bytes calldata userOp)
-        public
+        internal
         pure
         returns (address sender, bytes memory callData, bytes memory signature)
     {

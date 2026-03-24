@@ -9,7 +9,9 @@ Chain ID: 6343 | RPC: https://carrot.megaeth.com/rpc
 | v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | ✅ Deployed |
 | v0.6 | `0x5FF137D4b0FDCD49DcA30c7CF7f08a6C83Cff3a6` | ❌ Not deployed |
 
-Use EntryPoint v0.7. Import via `account-abstraction/interfaces/IEntryPoint.sol`.
+Use EntryPoint v0.7. The `account-abstraction` library is a git submodule under
+`packages/contracts/lib/`. Run `git submodule update --init` after cloning, then import:
+`account-abstraction/interfaces/IEntryPoint.sol`.
 
 ## Bundler
 
