@@ -134,4 +134,6 @@ Non-obvious findings that have burned time before. Full details in [`docs/gotcha
 - **EntryPoint v0.7** deployed at `0x0000000071727De22E5E9d8BAf0edAc6f37da032` on Carrot
 - **RIP-7212 P256 precompile not available** on Carrot — passkeys use software verifier (~200k gas)
 - **EIP-7966 not available** on Carrot — use standard async eth_sendRawTransaction
-- **No native ERC-4337 bundler** on MegaETH RPC — must use external bundler (Pimlico doesn't support chain 6343)
+- **No native ERC-4337 bundler** on MegaETH RPC — self-host Alto with `tools/alto/megaeth-carrot.json` (POC verified)
+- **Alto cannot auto-deploy simulation contracts** on MegaETH — pre-deployed manually, pass `--deploy-simulations-contract false`
+- **ZeroDev SDK `zd_getUserOperationGasPrice`** not supported by Alto — use `permissionless` + `pimlico_getUserOperationGasPrice`

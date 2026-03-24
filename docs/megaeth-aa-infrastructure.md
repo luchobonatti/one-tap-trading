@@ -14,13 +14,47 @@ Use EntryPoint v0.7. Import via `account-abstraction/interfaces/IEntryPoint.sol`
 ## Bundler
 
 `eth_sendUserOperation` is NOT supported on the MegaETH native RPC.
+Pimlico does NOT support chain 6343. We self-host **Alto** (Pimlico's open-source bundler).
 
-External bundler required. Pimlico does NOT support chain 6343.
+**Setup:** See `tools/alto/README.md` for full instructions.
+**Config:** `tools/alto/megaeth-carrot.json` (committed to repo).
 
-Recommended next steps:
-- Check Alchemy Bundler for chain 6343 support
-- Check Stackup for chain 6343 support
-- As fallback: self-hosted bundler (eth-infinitism reference implementation)
+### Key MegaETH flags for Alto
+
+```bash
+node alto/src/esm/cli/index.js \
+  --config tools/alto/megaeth-carrot.json \
+  --executor-private-keys "$DEPLOYER_PRIVATE_KEY" \
+  --utility-private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+### Alto simulation contracts (pre-deployed on Carrot)
+
+Alto requires simulation contracts for gas estimation. These cannot be deployed
+automatically by Alto because MegaETH requires `--legacy` transactions.
+**They are already deployed — do not redeploy.**
+
+| Contract | Address |
+|----------|---------|
+| EntryPointSimulations v0.7 | `0x097219E615B5042095A707797fc30d67DbD58045` |
+| PimlicoSimulations | `0xf64BddD711a41aA281a00Ff5D90aa0aB59014402` |
+
+### POC verified
+
+Full end-to-end test passed on Carrot:
+- ZeroDev Kernel v3 account created and funded
+- UserOp submitted → confirmed in one block (~10ms)
+- Bundle tx: `0xc3b3bc65eb390b8584b08fed46a4112d892d4401f106495438af367391e950c6`
+
+### Frontend stack (no backend involvement)
+
+```
+Frontend → Alto (port 4337) → EntryPoint v0.7 → MegaETH
+```
+
+The Rust indexer is read-only. Transactions never go through the backend.
+
+Packages: `@zerodev/sdk`, `@zerodev/ecdsa-validator`, `permissionless`, `viem`, `tslib`
 
 ## RIP-7212 (P256 Precompile)
 
@@ -42,6 +76,8 @@ Frontend must poll for transaction receipts or use the bundler's `eth_getUserOpe
 | Contract | Address |
 |----------|---------|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
+| EntryPointSimulations v0.7 | `0x097219E615B5042095A707797fc30d67DbD58045` |
+| PimlicoSimulations | `0xf64BddD711a41aA281a00Ff5D90aa0aB59014402` |
 | PerpEngine | `0xe35486669A5D905CF18D4af477Aaac08dF93Eab0` |
 | Settlement | `0x24354D1022E13f39f330Bbf2210edEEd21422eD5` |
 | PriceOracle | `0x7FBe2a83113A6374964d6fe25C000402471079d4` |
