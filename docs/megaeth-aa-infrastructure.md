@@ -144,3 +144,59 @@ Full artifact: [`packages/contracts/deployments/6343.json`](../packages/contract
 | PriceOracle | `0x7FBe2a83113A6374964d6fe25C000402471079d4` |
 | MockUSDC | `0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB` |
 | MockPriceFeed | `0xd152AaBf6e4dA27004dC4a4B29da4a7754318469` |
+
+---
+
+## Trading Flow (end-to-end)
+
+Full flow from grid tap to confirmed on-chain position — zero wallet popups after the initial session key delegation.
+
+```
+User taps grid cell
+    │
+    ▼
+lib/trading/submit.ts — openTrade({ isLong, collateral, leverage, accountAddress })
+    │
+    ├─ 1. getCurrentPriceBounds() — reads PriceOracle.getPrice()
+    │       builds: { expectedPrice, maxDeviation: 2%, deadline: now+60s }
+    │
+    ├─ 2. encodeFunctionData(perpEngineAbi, "openPosition", [...])
+    │
+    ├─ 3. buildKernelCallData(PerpEngine, innerCallData)
+    │       → Kernel execute(mode=0x00, encodePacked(target, 0, data))
+    │
+    ├─ 4. buildUserOp(smartAccountAddress, kernelCallData)
+    │       → nonce key = BigInt(SessionKeyValidator) → routes to our validator
+    │       → paymaster = VerifyingPaymaster (sponsors gas)
+    │
+    ├─ 5. signUserOp(userOp, session)
+    │       → concat([sessionKeyAddress (20 bytes), ecdsaSign(userOpHash) (65 bytes)])
+    │       → NO wallet popup
+    │
+    └─ 6. submitUserOp(signedOp)
+            → eth_sendUserOperation → Alto :4337 → EntryPoint v0.7 → MegaETH
+```
+
+### PriceBounds struct
+
+```solidity
+struct PriceBounds {
+    uint256 expectedPrice;  // from PriceOracle.getPrice()
+    uint256 maxDeviation;   // 2% of expectedPrice (200 BPS)
+    uint256 deadline;       // block.timestamp + 60s
+}
+```
+
+### Contract constants
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `MIN_COLLATERAL` | `1e6` | 1 USDC minimum per position |
+| `MAX_LEVERAGE` | `100` | Absolute cap |
+| `MAX_SAFE_LEVERAGE` | `20` | Safe cap (not immediately liquidatable) |
+
+### Session key prerequisites
+
+Before any trade, the smart account must have:
+1. Approved PerpEngine to spend USDC (`ERC20.approve(PerpEngine, amount)`)
+2. Granted a session key via `SessionKeyValidator.grantSession(...)` (done by `DelegateModal`)
