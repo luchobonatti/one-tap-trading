@@ -2,7 +2,8 @@
 pragma solidity ^0.8.28;
 
 /// @title IVerifyingPaymaster
-/// @notice Paymaster that sponsors gas for trading UserOperations targeting PerpEngine.
+/// @notice Paymaster that sponsors gas for trading UserOperations targeting PerpEngine
+///         and delegation UserOperations (USDC approve + session key grant).
 ///         Validates that UserOps call allowed functions before sponsoring gas.
 interface IVerifyingPaymaster {
     // ─── Events ───────────────────────────────────────────────────────────────
@@ -17,6 +18,16 @@ interface IVerifyingPaymaster {
     /// @param newTarget The new allowed target address.
     event AllowedTargetUpdated(address indexed oldTarget, address indexed newTarget);
 
+    /// @notice Emitted when the MockUSDC address is updated.
+    /// @param oldMockUsdc The previous MockUSDC address.
+    /// @param newMockUsdc The new MockUSDC address.
+    event MockUsdcUpdated(address indexed oldMockUsdc, address indexed newMockUsdc);
+
+    /// @notice Emitted when the SessionKeyValidator address is updated.
+    /// @param oldValidator The previous SessionKeyValidator address.
+    /// @param newValidator The new SessionKeyValidator address.
+    event SessionKeyValidatorUpdated(address indexed oldValidator, address indexed newValidator);
+
     /// @notice Emitted when the gas allowance per operation is updated.
     /// @param oldAllowance The previous gas allowance per operation.
     /// @param newAllowance The new gas allowance per operation.
@@ -24,7 +35,7 @@ interface IVerifyingPaymaster {
 
     // ─── Custom errors ────────────────────────────────────────────────────────
 
-    /// @notice Thrown when a UserOperation targets an address other than the allowed target.
+    /// @notice Thrown when a UserOperation targets an address other than the allowed targets.
     /// @param target The target address that was not allowed.
     error TargetNotAllowed(address target);
 
@@ -51,10 +62,20 @@ interface IVerifyingPaymaster {
 
     // ─── Owner-only functions ─────────────────────────────────────────────────
 
-    /// @notice Update the allowed target address (PerpEngine).
+    /// @notice Update the allowed trading target address (PerpEngine).
     /// @param newTarget The new allowed target address.
     /// @dev Only callable by the owner.
     function setAllowedTarget(address newTarget) external;
+
+    /// @notice Update the MockUSDC address.
+    /// @param newMockUsdc The new MockUSDC address.
+    /// @dev Only callable by the owner.
+    function setMockUsdc(address newMockUsdc) external;
+
+    /// @notice Update the SessionKeyValidator address.
+    /// @param newValidator The new SessionKeyValidator address.
+    /// @dev Only callable by the owner.
+    function setSessionKeyValidator(address newValidator) external;
 
     /// @notice Update the maximum gas allowance per UserOperation.
     /// @param newAllowance The new gas allowance per operation.

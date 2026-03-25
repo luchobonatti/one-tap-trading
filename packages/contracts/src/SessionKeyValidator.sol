@@ -8,6 +8,11 @@ import { ISessionKeyValidator } from "./interfaces/ISessionKeyValidator.sol";
 /// @title SessionKeyValidator
 /// @notice ERC-7579 validator module for session key authorization in One Tap Trading.
 ///         Enforces ephemeral ECDSA key permissions for PerpEngine operations.
+///
+///         Trading UserOps from Kernel v3 arrive as execute(bytes32 mode, bytes execCalldata)
+///         where execCalldata = abi.encodePacked(target, value, innerCallData).  This
+///         validator unwraps the outer execute call before checking the inner selector and
+///         deriving the collateral amount for spend-limit tracking.
 contract SessionKeyValidator is ISessionKeyValidator {
     // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -26,11 +31,16 @@ contract SessionKeyValidator is ISessionKeyValidator {
     /// @notice Validation failure return value.
     uint256 private constant VALIDATION_FAILED = 1;
 
-    /// @notice PerpEngine openPosition function selector.
-    bytes4 private constant OPEN_POSITION_SELECTOR = 0x5a6c3d4a;
+    /// @notice Kernel v3 ERC-7579 execute(bytes32,bytes) selector.
+    bytes4 private constant KERNEL_EXECUTE_SELECTOR = bytes4(keccak256("execute(bytes32,bytes)"));
 
-    /// @notice PerpEngine closePosition function selector.
-    bytes4 private constant CLOSE_POSITION_SELECTOR = 0x5c36b186;
+    /// @notice PerpEngine openPosition selector (keccak256 of full signature).
+    bytes4 private constant OPEN_POSITION_SELECTOR =
+        bytes4(keccak256("openPosition(bool,uint256,uint256,(uint256,uint256,uint256))"));
+
+    /// @notice PerpEngine closePosition selector (keccak256 of full signature).
+    bytes4 private constant CLOSE_POSITION_SELECTOR =
+        bytes4(keccak256("closePosition(uint256,(uint256,uint256,uint256))"));
 
     // ─── State ────────────────────────────────────────────────────────────────
 
@@ -86,84 +96,93 @@ contract SessionKeyValidator is ISessionKeyValidator {
         // Minimum ABI-encoded size: 9 fields × 32 bytes inline + 4 dynamic length words
         if (userOp.length < 416) return VALIDATION_FAILED;
 
-        // Decode PackedUserOperation directly — called only by EntryPoint with valid data
-        (address sender, bytes memory callData, bytes memory signature) = _decodeUserOp(userOp);
+        (address sender, bytes memory rawCallData, bytes memory signature) = _decodeUserOp(userOp);
 
-        // Extract session key from signature (first 20 bytes)
         if (signature.length < 85) return VALIDATION_FAILED;
         address extractedSessionKey = address(bytes20(_sliceBytes(signature, 0, 20)));
 
-        // Get session data for the sender (the smart account)
         SessionData storage session = sessions[sender];
+        if (session.sessionKey != extractedSessionKey) return VALIDATION_FAILED;
+        if (!session.active) return VALIDATION_FAILED;
+        if (block.timestamp > session.validUntil) return VALIDATION_FAILED;
 
-        // Verify session key matches
-        if (session.sessionKey != extractedSessionKey) {
+        // Unwrap ERC-7579 execute and validate call — extracted to avoid stack-too-deep.
+        (address callTarget, bytes memory innerCallData) = _unwrapExecuteCall(rawCallData);
+        if (innerCallData.length < 4) return VALIDATION_FAILED;
+        if (callTarget != session.targetContract) return VALIDATION_FAILED;
+
+        bytes4 selector = bytes4(
+            abi.encodePacked(innerCallData[0], innerCallData[1], innerCallData[2], innerCallData[3])
+        );
+        if (!_isSelectorAllowed(selector, session.allowedSelectors)) return VALIDATION_FAILED;
+
+        // Verify ECDSA signature before mutating state.
+        // Doing this first prevents a griefing attack where an attacker passes the correct
+        // sessionKey address (first 20 bytes of signature) but an invalid ECDSA signature,
+        // incrementing spentAmount and locking the session without ever being authorised.
+        if (!_verifyEcdsa(userOpHash, _sliceBytes(signature, 20, 85), extractedSessionKey)) {
             return VALIDATION_FAILED;
         }
 
-        // Verify session is active
-        if (!session.active) {
-            return VALIDATION_FAILED;
-        }
-
-        // Verify session has not expired
-        if (block.timestamp > session.validUntil) {
-            return VALIDATION_FAILED;
-        }
-
-        // Extract function selector from callData
-        if (callData.length < 4) return VALIDATION_FAILED;
-        bytes4 selector = bytes4(_sliceBytes(callData, 0, 4));
-
-        // Verify selector is allowed
-        bool selectorAllowed = false;
-        for (uint256 i = 0; i < session.allowedSelectors.length; i++) {
-            if (session.allowedSelectors[i] == selector) {
-                selectorAllowed = true;
-                break;
-            }
-        }
-        if (!selectorAllowed) {
-            return VALIDATION_FAILED;
-        }
-
-        // For openPosition, decode collateral and check spend limit
+        // Only after signature is verified: enforce spend limit and update state.
+        // innerCallData layout: [0:4] selector, [4:36] isLong, [36:68] collateral.
         if (selector == OPEN_POSITION_SELECTOR) {
-            // openPosition(bool isLong, uint256 collateral, uint256 leverage, PriceBounds calldata bounds)
-            // Calldata layout:
-            // [0:4]    selector
-            // [4:36]   isLong (bool, padded to 32 bytes)
-            // [36:68]  collateral (uint256)
-            // [68:100] leverage (uint256)
-            // [100+]   PriceBounds offset and data
-
-            if (callData.length < 68) return VALIDATION_FAILED;
-
-            uint256 collateral = uint256(bytes32(_sliceBytes(callData, 36, 68)));
-
-            // Check spend limit
-            if (session.spentAmount + collateral > session.spendLimit) {
-                return VALIDATION_FAILED;
-            }
-
-            // Update spent amount
+            if (innerCallData.length < 68) return VALIDATION_FAILED;
+            uint256 collateral = abi.decode(_sliceBytes(innerCallData, 36, 68), (uint256));
+            if (session.spentAmount + collateral > session.spendLimit) return VALIDATION_FAILED;
             session.spentAmount += collateral;
-        }
-        // For closePosition, no spend tracking needed
-
-        // Verify ECDSA signature
-        // Extract ECDSA signature from signature bytes (bytes 20-85)
-        bytes memory ecdsaSig = _sliceBytes(signature, 20, 85);
-
-        // Recover signer from signature
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(userOpHash);
-        address recovered = ECDSA.recover(ethSignedHash, ecdsaSig);
-
-        if (recovered != extractedSessionKey) {
-            return VALIDATION_FAILED;
         }
 
         return VALIDATION_SUCCESS;
+    }
+
+    /// @notice Unwrap a Kernel v3 ERC-7579 execute(bytes32,bytes) single call.
+    ///         execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
+    ///         Returns (address(0), "") on parse failure.
+    function _unwrapExecuteCall(bytes memory rawCallData)
+        internal
+        pure
+        returns (address target, bytes memory innerCallData)
+    {
+        if (rawCallData.length < 4) return (address(0), "");
+
+        bytes4 outer = bytes4(
+            abi.encodePacked(rawCallData[0], rawCallData[1], rawCallData[2], rawCallData[3])
+        );
+        if (outer != KERNEL_EXECUTE_SELECTOR) return (address(0), "");
+
+        if (rawCallData.length < 100) return (address(0), "");
+
+        (, bytes memory execCalldata) =
+            abi.decode(_sliceBytes(rawCallData, 4, rawCallData.length), (bytes32, bytes));
+
+        if (execCalldata.length < 56) return (address(0), "");
+
+        bytes memory targetPadded = abi.encodePacked(bytes12(0), _sliceBytes(execCalldata, 0, 20));
+        target = abi.decode(targetPadded, (address));
+        innerCallData = _sliceBytes(execCalldata, 52, execCalldata.length);
+    }
+
+    /// @notice Check whether `selector` appears in `allowedSelectors`.
+    function _isSelectorAllowed(bytes4 selector, bytes4[] memory allowedSelectors)
+        internal
+        pure
+        returns (bool)
+    {
+        for (uint256 i = 0; i < allowedSelectors.length; ++i) {
+            if (allowedSelectors[i] == selector) return true;
+        }
+        return false;
+    }
+
+    /// @notice Verify an ECDSA signature using eth_sign message hash.
+    function _verifyEcdsa(bytes32 msgHash, bytes memory sig, address expectedSigner)
+        internal
+        pure
+        returns (bool)
+    {
+        bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(msgHash);
+        return ECDSA.recover(ethHash, sig) == expectedSigner;
     }
 
     /// @notice Decodes the relevant fields from an ABI-encoded PackedUserOperation.
@@ -178,11 +197,7 @@ contract SessionKeyValidator is ISessionKeyValidator {
         );
     }
 
-    /// @notice Helper function to slice bytes.
-    /// @param data The bytes to slice.
-    /// @param start The start index.
-    /// @param end The end index (exclusive).
-    /// @return The sliced bytes.
+    /// @notice Slice a bytes memory array from [start, end).
     function _sliceBytes(bytes memory data, uint256 start, uint256 end)
         internal
         pure
@@ -190,7 +205,7 @@ contract SessionKeyValidator is ISessionKeyValidator {
     {
         require(end <= data.length, "Slice out of bounds");
         bytes memory result = new bytes(end - start);
-        for (uint256 i = 0; i < end - start; i++) {
+        for (uint256 i = 0; i < end - start; ++i) {
             result[i] = data[start + i];
         }
         return result;
@@ -202,52 +217,33 @@ contract SessionKeyValidator is ISessionKeyValidator {
         view
         returns (bytes4)
     {
-        // Extract session key from signature (first 20 bytes)
         if (signature.length < 85) return ERC1271_INVALID;
 
         bytes memory sigBytes = bytes(signature);
         address extractedSessionKey = address(bytes20(_sliceBytes(sigBytes, 0, 20)));
 
-        // Get session data
         SessionData storage session = sessions[sender];
 
-        // Verify session key matches
-        if (session.sessionKey != extractedSessionKey) {
-            return ERC1271_INVALID;
-        }
+        if (session.sessionKey != extractedSessionKey) return ERC1271_INVALID;
+        if (!session.active) return ERC1271_INVALID;
+        if (block.timestamp > session.validUntil) return ERC1271_INVALID;
 
-        // Verify session is active
-        if (!session.active) {
-            return ERC1271_INVALID;
-        }
-
-        // Verify session has not expired
-        if (block.timestamp > session.validUntil) {
-            return ERC1271_INVALID;
-        }
-
-        // Extract ECDSA signature (bytes 20-85)
         bytes memory ecdsaSig = _sliceBytes(sigBytes, 20, 85);
-
-        // Recover signer
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(hash);
         address recovered = ECDSA.recover(ethSignedHash, ecdsaSig);
 
-        if (recovered != extractedSessionKey) {
-            return ERC1271_INVALID;
-        }
-
+        if (recovered != extractedSessionKey) return ERC1271_INVALID;
         return ERC1271_MAGIC_VALUE;
     }
 
     /// @inheritdoc ISessionKeyValidator
-    function onInstall(bytes calldata data) external {
+    function onInstall(bytes calldata data) external pure {
         // No-op: session data is managed via grantSession
         (data);
     }
 
     /// @inheritdoc ISessionKeyValidator
-    function onUninstall(bytes calldata data) external {
+    function onUninstall(bytes calldata data) external pure {
         // No-op: session data persists; use revokeSession to disable
         (data);
     }

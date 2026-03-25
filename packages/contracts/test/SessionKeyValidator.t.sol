@@ -18,8 +18,13 @@ contract SessionKeyValidatorTest is Test {
     address internal perpEngine = 0xe35486669A5D905CF18D4af477Aaac08dF93Eab0;
     address internal mockUSDC = 0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB;
 
-    bytes4 internal constant OPEN_POSITION_SELECTOR = 0x5a6c3d4a;
-    bytes4 internal constant CLOSE_POSITION_SELECTOR = 0x5c36b186;
+    // Correct selectors matching PerpEngine ABI (keccak256 of full signatures)
+    bytes4 internal constant OPEN_POSITION_SELECTOR =
+        bytes4(keccak256("openPosition(bool,uint256,uint256,(uint256,uint256,uint256))"));
+    bytes4 internal constant CLOSE_POSITION_SELECTOR =
+        bytes4(keccak256("closePosition(uint256,(uint256,uint256,uint256))"));
+    // Kernel v3 ERC-7579 execute selector
+    bytes4 internal constant KERNEL_EXECUTE_SELECTOR = bytes4(keccak256("execute(bytes32,bytes)"));
 
     function setUp() public {
         (owner, ownerKey) = makeAddrAndKey("owner");
@@ -29,15 +34,27 @@ contract SessionKeyValidatorTest is Test {
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    /// @dev Create a valid openPosition calldata.
-    function _createOpenPositionCalldata(bool isLong, uint256 collateral, uint256 leverage)
+    /// @dev Wrap inner callData in Kernel v3 ERC-7579 execute(bytes32,bytes) single-call format.
+    function _wrapExecute(address target, bytes memory innerCallData)
         internal
         pure
         returns (bytes memory)
     {
-        // openPosition(bool isLong, uint256 collateral, uint256 leverage, PriceBounds calldata bounds)
-        // We'll create minimal calldata without the PriceBounds struct for testing
-        bytes memory calldata_ = abi.encodeWithSelector(
+        bytes memory execCalldata = abi.encodePacked(target, uint256(0), innerCallData);
+        return abi.encodeWithSelector(
+            KERNEL_EXECUTE_SELECTOR,
+            bytes32(0), // single-call mode (callType 0x00)
+            execCalldata
+        );
+    }
+
+    /// @dev Create wrapped openPosition callData (ERC-7579 execute around PerpEngine call).
+    function _createOpenPositionCalldata(bool isLong, uint256 collateral, uint256 leverage)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes memory inner = abi.encodeWithSelector(
             OPEN_POSITION_SELECTOR,
             isLong,
             collateral,
@@ -46,22 +63,22 @@ contract SessionKeyValidatorTest is Test {
             uint256(0), // maxDeviation (placeholder)
             uint256(0) // deadline (placeholder)
         );
-        return calldata_;
+        return _wrapExecute(perpEngine, inner);
     }
 
-    /// @dev Create a valid closePosition calldata.
-    function _createClosePositionCalldata(uint256 positionId) internal pure returns (bytes memory) {
-        bytes memory calldata_ = abi.encodeWithSelector(
+    /// @dev Create wrapped closePosition callData (ERC-7579 execute around PerpEngine call).
+    function _createClosePositionCalldata(uint256 positionId) internal view returns (bytes memory) {
+        bytes memory inner = abi.encodeWithSelector(
             CLOSE_POSITION_SELECTOR,
             positionId,
-            uint256(0), // expectedPrice (placeholder)
-            uint256(0), // maxDeviation (placeholder)
-            uint256(0) // deadline (placeholder)
+            uint256(0), // expectedPrice
+            uint256(0), // maxDeviation
+            uint256(0) // deadline
         );
-        return calldata_;
+        return _wrapExecute(perpEngine, inner);
     }
 
-    /// @dev Create a mock PackedUserOperation.
+    /// @dev Create a mock PackedUserOperation ABI-encoded bytes.
     function _createPackedUserOp(address sender, bytes memory callData, bytes memory signature)
         internal
         pure
@@ -71,7 +88,7 @@ contract SessionKeyValidatorTest is Test {
             sender, // sender
             uint256(0), // nonce
             bytes(""), // initCode
-            callData, // callData
+            callData, // callData (already wrapped in execute)
             bytes32(0), // accountGasLimits
             uint256(0), // preVerificationGas
             bytes32(0), // gasFees
@@ -80,14 +97,13 @@ contract SessionKeyValidatorTest is Test {
         );
     }
 
-    /// @dev Create a valid signature for a userOpHash.
+    /// @dev Create a valid ECDSA signature for a userOpHash using the session key.
     function _createSignature(bytes32 userOpHash) internal view returns (bytes memory) {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
         bytes memory ecdsaSig = abi.encodePacked(r, s, v);
-
-        // Combine sessionKey (20 bytes) + ecdsaSig (65 bytes)
+        // Combine sessionKey (20 bytes) + ecdsaSig (65 bytes) = 85 bytes total
         return abi.encodePacked(sessionKey, ecdsaSig);
     }
 
@@ -99,7 +115,7 @@ contract SessionKeyValidatorTest is Test {
         selectors[1] = CLOSE_POSITION_SELECTOR;
 
         uint48 validUntil = uint48(block.timestamp + 1 days);
-        uint256 spendLimit = 10_000e6; // 10k USDC
+        uint256 spendLimit = 10_000e6;
 
         vm.prank(owner);
         validator.grantSession(sessionKey, validUntil, perpEngine, selectors, spendLimit);
@@ -112,6 +128,8 @@ contract SessionKeyValidatorTest is Test {
         assertEq(session.spentAmount, 0);
         assertTrue(session.active);
         assertEq(session.allowedSelectors.length, 2);
+        assertEq(session.allowedSelectors[0], OPEN_POSITION_SELECTOR);
+        assertEq(session.allowedSelectors[1], CLOSE_POSITION_SELECTOR);
     }
 
     function test_RevokeSession_SetsInactive() public {
@@ -131,7 +149,6 @@ contract SessionKeyValidatorTest is Test {
     }
 
     function test_ValidateUserOp_ValidSession_ReturnsSuccess() public {
-        // Grant session
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -139,19 +156,16 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // Create userOp
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
         bytes memory signature = _createSignature(userOpHash);
         bytes memory userOp = _createPackedUserOp(owner, callData, signature);
 
-        // Validate
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0); // VALIDATION_SUCCESS
     }
 
     function test_ValidateUserOp_OpenPosition_TracksSpend() public {
-        // Grant session with 5k USDC limit
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -162,30 +176,23 @@ contract SessionKeyValidatorTest is Test {
         // First openPosition: 2k USDC
         bytes memory callData1 = _createOpenPositionCalldata(true, 2_000e6, 10);
         bytes32 userOpHash1 = keccak256("hash1");
-        bytes memory signature1 = _createSignature(userOpHash1);
-        bytes memory userOp1 = _createPackedUserOp(owner, callData1, signature1);
+        bytes memory userOp1 = _createPackedUserOp(owner, callData1, _createSignature(userOpHash1));
 
         uint256 result1 = validator.validateUserOp(userOp1, userOpHash1);
         assertEq(result1, 0);
-
-        ISessionKeyValidator.SessionData memory session1 = validator.getSession(owner);
-        assertEq(session1.spentAmount, 2_000e6);
+        assertEq(validator.getSession(owner).spentAmount, 2_000e6);
 
         // Second openPosition: 2.5k USDC (total 4.5k, within limit)
         bytes memory callData2 = _createOpenPositionCalldata(true, 2_500e6, 10);
         bytes32 userOpHash2 = keccak256("hash2");
-        bytes memory signature2 = _createSignature(userOpHash2);
-        bytes memory userOp2 = _createPackedUserOp(owner, callData2, signature2);
+        bytes memory userOp2 = _createPackedUserOp(owner, callData2, _createSignature(userOpHash2));
 
         uint256 result2 = validator.validateUserOp(userOp2, userOpHash2);
         assertEq(result2, 0);
-
-        ISessionKeyValidator.SessionData memory session2 = validator.getSession(owner);
-        assertEq(session2.spentAmount, 4_500e6);
+        assertEq(validator.getSession(owner).spentAmount, 4_500e6);
     }
 
     function test_ValidateUserOp_ClosePosition_NoSpendTracking() public {
-        // Grant session
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = CLOSE_POSITION_SELECTOR;
         vm.prank(owner);
@@ -193,23 +200,18 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // closePosition should not track spend
         bytes memory callData = _createClosePositionCalldata(1);
         bytes32 userOpHash = keccak256("close_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0);
-
-        ISessionKeyValidator.SessionData memory session = validator.getSession(owner);
-        assertEq(session.spentAmount, 0); // No spend tracked
+        assertEq(validator.getSession(owner).spentAmount, 0); // No spend tracked
     }
 
     // ─── Unit Tests: Error Cases ──────────────────────────────────────────────
 
     function test_ValidateUserOp_ExpiredSession_ReturnsFailed() public {
-        // Grant session that expires immediately
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -219,15 +221,13 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1); // VALIDATION_FAILED
     }
 
     function test_ValidateUserOp_RevokedSession_ReturnsFailed() public {
-        // Grant and then revoke
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -240,15 +240,13 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 1); // VALIDATION_FAILED
+        assertEq(result, 1);
     }
 
     function test_ValidateUserOp_WrongSessionKey_ReturnsFailed() public {
-        // Grant session with one key
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -256,24 +254,22 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // Create signature with different key
         (address wrongKey, uint256 wrongKeyPriv) = makeAddrAndKey("wrongKey");
         bytes32 userOpHash = keccak256("test_hash");
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKeyPriv, ethSignedHash);
-        bytes memory ecdsaSig = abi.encodePacked(r, s, v);
-        bytes memory wrongSignature = abi.encodePacked(wrongKey, ecdsaSig);
+        bytes memory wrongSig = abi.encodePacked(wrongKey, abi.encodePacked(r, s, v));
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
-        bytes memory userOp = _createPackedUserOp(owner, callData, wrongSignature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, wrongSig);
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 1); // VALIDATION_FAILED
+        assertEq(result, 1);
     }
 
     function test_ValidateUserOp_WrongSelector_ReturnsFailed() public {
-        // Grant session with only openPosition selector
+        // Session only allows openPosition, but callData has closePosition
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -281,18 +277,33 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // Try to call closePosition
         bytes memory callData = _createClosePositionCalldata(1);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 1); // VALIDATION_FAILED
+        assertEq(result, 1);
+    }
+
+    function test_ValidateUserOp_WrongTarget_ReturnsFailed() public {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        // Wrap callData targeting mockUSDC instead of perpEngine
+        bytes memory inner = abi.encodeWithSelector(OPEN_POSITION_SELECTOR, true, 1_000e6, 10);
+        bytes memory callData = _wrapExecute(mockUSDC, inner); // wrong target
+        bytes32 userOpHash = keccak256("test_hash");
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 1);
     }
 
     function test_ValidateUserOp_SpendLimitExceeded_ReturnsFailed() public {
-        // Grant session with 1k USDC limit
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -300,14 +311,58 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 1_000e6
         );
 
-        // Try to spend 2k USDC
         bytes memory callData = _createOpenPositionCalldata(true, 2_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 1);
+    }
+
+    function test_ValidateUserOp_InvalidSigDoesNotIncrementSpend() public {
+        // Verify ECDSA-before-state-mutation: a caller with the correct sessionKey address but
+        // a bad ECDSA signature must NOT be able to increment spentAmount (griefing protection).
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
+        bytes32 userOpHash = keccak256("test_hash");
+
+        // Build a signature that encodes the correct sessionKey address but uses a different
+        // private key for the ECDSA portion — this should fail without touching spentAmount.
+        (, uint256 otherPriv) = makeAddrAndKey("otherKey");
+        bytes32 ethSignedHash =
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(otherPriv, ethSignedHash);
+        bytes memory badSig = abi.encodePacked(sessionKey, abi.encodePacked(r, s, v));
+
+        bytes memory userOp = _createPackedUserOp(owner, callData, badSig);
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1); // VALIDATION_FAILED
+
+        // spentAmount must remain zero — no state mutation occurred.
+        assertEq(validator.getSession(owner).spentAmount, 0);
+    }
+
+    function test_ValidateUserOp_NotWrappedInExecute_ReturnsFailed() public {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        // Pass raw inner callData without execute wrapper — validator should reject
+        bytes memory rawCallData = abi.encodeWithSelector(OPEN_POSITION_SELECTOR, true, 1_000e6, 10);
+        bytes32 userOpHash = keccak256("test_hash");
+        bytes memory userOp = _createPackedUserOp(owner, rawCallData, _createSignature(userOpHash));
+
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 1); // Outer selector != KERNEL_EXECUTE_SELECTOR
     }
 
     function test_GrantSession_ZeroSessionKey_Reverts() public {
@@ -353,7 +408,6 @@ contract SessionKeyValidatorTest is Test {
     // ─── ERC-1271 Tests ───────────────────────────────────────────────────────
 
     function test_IsValidSignatureWithSender_ValidSignature_ReturnsMagicValue() public {
-        // Grant session
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -361,16 +415,14 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // Create valid signature
         bytes32 hash = keccak256("test_message");
         bytes memory signature = _createSignature(hash);
 
         bytes4 result = validator.isValidSignatureWithSender(owner, hash, signature);
-        assertEq(result, bytes4(0x1626ba7e)); // ERC1271_MAGIC_VALUE
+        assertEq(result, bytes4(0x1626ba7e));
     }
 
     function test_IsValidSignatureWithSender_InvalidSignature_ReturnsInvalid() public {
-        // Grant session
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
         vm.prank(owner);
@@ -378,23 +430,21 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
         );
 
-        // Create signature with wrong key
         (address wrongKey, uint256 wrongKeyPriv) = makeAddrAndKey("wrongKey");
         bytes32 hash = keccak256("test_message");
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKeyPriv, ethSignedHash);
-        bytes memory ecdsaSig = abi.encodePacked(r, s, v);
-        bytes memory wrongSignature = abi.encodePacked(wrongKey, ecdsaSig);
+        bytes memory wrongSig = abi.encodePacked(wrongKey, abi.encodePacked(r, s, v));
 
-        bytes4 result = validator.isValidSignatureWithSender(owner, hash, wrongSignature);
-        assertEq(result, bytes4(0xffffffff)); // ERC1271_INVALID
+        bytes4 result = validator.isValidSignatureWithSender(owner, hash, wrongSig);
+        assertEq(result, bytes4(0xffffffff));
     }
 
     // ─── Module Type Tests ────────────────────────────────────────────────────
 
     function test_IsModuleType_ValidatorType_ReturnsTrue() public {
-        assertTrue(validator.isModuleType(1)); // MODULE_TYPE_VALIDATOR
+        assertTrue(validator.isModuleType(1));
     }
 
     function test_IsModuleType_InvalidType_ReturnsFalse() public {
@@ -406,7 +456,6 @@ contract SessionKeyValidatorTest is Test {
     // ─── Fuzz Tests ───────────────────────────────────────────────────────────
 
     function test_fuzz_ValidateUserOp_RandomValidUntil(uint48 validUntil) public {
-        // Ensure validUntil is in a reasonable range
         validUntil = uint48(bound(validUntil, block.timestamp, block.timestamp + 365 days));
 
         bytes4[] memory selectors = new bytes4[](1);
@@ -416,18 +465,15 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 0); // Should succeed since validUntil is in the future
+        assertEq(result, 0);
     }
 
     function test_fuzz_ValidateUserOp_RandomCollateral(uint256 collateral) public {
-        // Bound collateral to reasonable range (1 USDC to 1M USDC)
         collateral = bound(collateral, 1e6, 1_000_000e6);
-
-        uint256 spendLimit = collateral + 1_000e6; // Ensure limit is above collateral
+        uint256 spendLimit = collateral + 1_000e6;
 
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;
@@ -438,15 +484,13 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 0); // Should succeed
+        assertEq(result, 0);
     }
 
     function test_fuzz_ValidateUserOp_RandomSpendLimit(uint256 spendLimit) public {
-        // Bound spend limit
         spendLimit = bound(spendLimit, 1e6, 10_000_000e6);
 
         bytes4[] memory selectors = new bytes4[](1);
@@ -456,22 +500,18 @@ contract SessionKeyValidatorTest is Test {
             sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, spendLimit
         );
 
-        // Use a collateral that's within the limit
         uint256 collateral = spendLimit / 2;
-
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 0); // Should succeed
+        assertEq(result, 0);
     }
 
     function test_fuzz_ValidateUserOp_ExceedsSpendLimit(uint256 collateral, uint256 spendLimit)
         public
     {
-        // Ensure collateral > spendLimit (collateral min 2e6 so spendLimit range [1e6, collateral-1] is valid)
         collateral = bound(collateral, 2e6, 10_000_000e6);
         spendLimit = bound(spendLimit, 1e6, collateral - 1);
 
@@ -484,10 +524,9 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 1); // Should fail
+        assertEq(result, 1);
     }
 }
