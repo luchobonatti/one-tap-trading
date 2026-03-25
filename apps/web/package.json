@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:setup": "tsx e2e/scripts/setup.ts",
     "lint": "oxlint ./src",
     "typecheck": "tsc --noEmit",
     "format": "echo 'stub: replace when oxfmt is set up'",
@@ -25,6 +27,7 @@
     "viem": "2.47.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "4.2.2",
     "@testing-library/dom": "10.4.0",
     "@testing-library/jest-dom": "6.6.3",
@@ -38,6 +41,7 @@
     "oxlint": "0.10.0",
     "postcss": "8.4.49",
     "tailwindcss": "4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3",
     "vitest": "3.0.5"
   }

@@ -1,1 +1,4 @@
 *.tsbuildinfo
+e2e/state.json
+playwright-report/
+test-results/
