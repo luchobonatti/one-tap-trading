@@ -5,6 +5,6 @@
   "Settlement": "0x24354d1022e13f39f330bbf2210edeed21422ed5",
   "PerpEngine": "0xe35486669a5d905cf18d4af477aaac08df93eab0",
   "deployer": "0xa69266094eb956a59a32c5f78e8a3faf3ad8adcd",
-  "SessionKeyValidator": "0xa87ace0ffa76047f1c889bf28842887d7e38e802",
-  "VerifyingPaymaster": "0x8dc3da94318e0b4008d2252ecdbffcf55f30545a"
+  "SessionKeyValidator": "0x672b55126649951afbbd13d82015691bc8bad007",
+  "VerifyingPaymaster": "0xbcb4b1fdec3958beac5542b4752f7faf4bcaf226"
 }

@@ -47,8 +47,9 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     bytes4 private constant GRANT_SESSION_SELECTOR =
         bytes4(keccak256("grantSession(address,uint48,address,bytes4[],uint256)"));
 
-    /// @notice Default gas allowance per UserOperation (5 M — covers MegaETH testnet gas).
-    uint256 private constant DEFAULT_GAS_ALLOWANCE = 5_000_000;
+    /// @notice Default gas allowance per UserOperation (1 Gwei — covers MegaETH testnet gas,
+    ///         which runs ~30× higher than mainnet; observed delegation maxCost ~407 M wei).
+    uint256 private constant DEFAULT_GAS_ALLOWANCE = 1_000_000_000;
 
     // ─── Immutables ───────────────────────────────────────────────────────────
 
