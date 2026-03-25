@@ -39,6 +39,9 @@ const MOCK_USDC_ABI = [
 const ENTRY_POINT = getEntryPoint("0.7");
 
 async function deriveAccountAddress(serializedData: string): Promise<string> {
+  if (serializedData === "") {
+    throw new Error("Serialized validator is empty — passkey account creation may have failed");
+  }
   const client = createPublicClient({
     chain: megaEthCarrot,
     transport: http(CHAIN_RPC),
