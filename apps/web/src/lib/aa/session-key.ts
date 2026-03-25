@@ -11,6 +11,20 @@ import {
 } from "@one-tap/shared-types";
 import { getSmartAccountClient } from "@/lib/aa/account";
 
+const INSTALL_MODULE_ABI = [
+  {
+    name: "installModule",
+    type: "function",
+    inputs: [
+      { name: "moduleTypeId", type: "uint256" },
+      { name: "module", type: "address" },
+      { name: "initData", type: "bytes" },
+    ],
+    outputs: [],
+    stateMutability: "payable",
+  },
+] as const;
+
 const STORAGE_KEY = "ott-session-key-v1";
 const VALID_DURATION_SECONDS = 4 * 3600;
 
@@ -77,12 +91,24 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   });
 
   const client = await getSmartAccountClient();
+  const smartAccountAddress = client.account.address as Address;
+
+  const installModuleCallData = encodeFunctionData({
+    abi: INSTALL_MODULE_ABI,
+    functionName: "installModule",
+    args: [1n, sessionKeyValidatorAddress[6343], "0x"],
+  });
 
   const opHash = await client.sendUserOperation({
     calls: [
       {
         to: mockUsdcAddress[6343],
         data: approveCallData,
+        value: 0n,
+      },
+      {
+        to: smartAccountAddress,
+        data: installModuleCallData,
         value: 0n,
       },
       {
