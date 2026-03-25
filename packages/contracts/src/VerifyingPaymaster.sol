@@ -122,26 +122,23 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
             if (callType == CALLTYPE_SINGLE) {
                 // execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
                 // Layout: [0:20] target, [20:52] value, [52+] innerCallData
-                (address target, bytes4 innerSelector) = _extractSingleCall(execCalldata);
-                _requireAllowedCall(target, innerSelector);
+                (address target, bytes memory innerCallData) = _extractSingleCall(execCalldata);
+                _requireAllowedCall(target, innerCallData);
             } else if (callType == CALLTYPE_BATCH) {
                 // execCalldata = abi.encode(Execution[]) where Execution = {target, value, callData}
                 Execution[] memory execs = abi.decode(execCalldata, (Execution[]));
                 for (uint256 i = 0; i < execs.length; ++i) {
-                    bytes memory cd = execs[i].callData;
-                    if (cd.length < 4) revert SelectorNotAllowed(bytes4(0));
-                    bytes4 sel;
-                    assembly {
-                        sel := mload(add(cd, 0x20))
-                    }
-                    _requireAllowedCall(execs[i].target, sel);
+                    _requireAllowedCall(execs[i].target, execs[i].callData);
                 }
             } else {
                 revert SelectorNotAllowed(outerSelector);
             }
         } else {
-            // Direct call (no execute wrapper) — assume target is allowedTarget.
-            _requireAllowedCall(allowedTarget, outerSelector);
+            // Direct call (no execute wrapper) — only PerpEngine trading selectors allowed.
+            if (outerSelector != OPEN_POSITION_SELECTOR && outerSelector != CLOSE_POSITION_SELECTOR)
+            {
+                revert SelectorNotAllowed(outerSelector);
+            }
         }
 
         context = abi.encode(userOp.sender, maxCost);
@@ -219,44 +216,68 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
-    /// @dev Extract target address and inner selector from ERC-7579 single-call execCalldata.
+    /// @dev Extract target address and full innerCallData from ERC-7579 single-call execCalldata.
     ///      execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
-    ///      Layout: bytes [0:20] = target, [20:52] = value, [52:56] = innerSelector.
-    ///      Uses assembly for efficient extraction without looping.
+    ///      Layout: bytes [0:20] = target, [20:52] = value, [52:] = innerCallData.
     function _extractSingleCall(bytes memory execCalldata)
         internal
         pure
-        returns (address target, bytes4 innerSelector)
+        returns (address target, bytes memory innerCallData)
     {
         // Need at least 20 (address) + 32 (uint256) + 4 (selector) = 56 bytes.
         if (execCalldata.length < 56) revert SelectorNotAllowed(bytes4(0));
         assembly {
-            // execCalldata + 0x20 = start of packed data (skip length word).
             let ptr := add(execCalldata, 0x20)
-            // Address occupies first 20 bytes — load 32, shift right 96 bits (12 bytes).
             target := shr(96, mload(ptr))
-            // innerSelector starts at byte 52 — load 32 bytes, bytes4 takes leftmost 4.
-            innerSelector := mload(add(ptr, 52))
+        }
+        uint256 innerLen = execCalldata.length - 52;
+        innerCallData = new bytes(innerLen);
+        for (uint256 i = 0; i < innerLen; ++i) {
+            innerCallData[i] = execCalldata[52 + i];
         }
     }
 
-    /// @dev Revert if a (target, selector) pair is not in the allowed whitelist.
-    ///      PerpEngine: openPosition, closePosition.
-    ///      MockUSDC:   approve.
-    ///      SessionKeyValidator: grantSession.
-    function _requireAllowedCall(address target, bytes4 selector) internal view {
+    /// @dev Revert if a call is not in the allowed whitelist.
+    ///      Validates both (target, selector) and critical call arguments:
+    ///      - MockUSDC.approve: spender must be allowedTarget (PerpEngine)
+    ///      - SessionKeyValidator.grantSession: targetContract must be allowedTarget (PerpEngine)
+    function _requireAllowedCall(address target, bytes memory callData) internal view {
+        if (callData.length < 4) revert SelectorNotAllowed(bytes4(0));
+        bytes4 selector;
+        assembly {
+            selector := mload(add(callData, 0x20))
+        }
+
         if (target == allowedTarget) {
             if (selector != OPEN_POSITION_SELECTOR && selector != CLOSE_POSITION_SELECTOR) {
                 revert SelectorNotAllowed(selector);
             }
         } else if (target == mockUsdc) {
-            if (selector != APPROVE_SELECTOR) {
-                revert SelectorNotAllowed(selector);
+            if (selector != APPROVE_SELECTOR) revert SelectorNotAllowed(selector);
+            // approve(address spender, uint256 amount) — spender is ABI-encoded at offset 4.
+            // ABI-encoded address: right-aligned in a 32-byte slot → bottom 20 bytes.
+            if (callData.length < 36) revert SelectorNotAllowed(selector);
+            address spender;
+            assembly {
+                spender := and(
+                    mload(add(add(callData, 0x20), 4)),
+                    0xffffffffffffffffffffffffffffffffffffffff
+                )
             }
+            if (spender != allowedTarget) revert TargetNotAllowed(spender);
         } else if (target == sessionKeyValidator) {
-            if (selector != GRANT_SESSION_SELECTOR) {
-                revert SelectorNotAllowed(selector);
+            if (selector != GRANT_SESSION_SELECTOR) revert SelectorNotAllowed(selector);
+            // grantSession(address sessionKey, uint48 validUntil, address targetContract, ...)
+            // ABI layout: selector(4) + sessionKey(32) + validUntil(32) + targetContract(32)
+            if (callData.length < 100) revert SelectorNotAllowed(selector);
+            address grantTarget;
+            assembly {
+                grantTarget := and(
+                    mload(add(add(callData, 0x20), 68)),
+                    0xffffffffffffffffffffffffffffffffffffffff
+                )
             }
+            if (grantTarget != allowedTarget) revert TargetNotAllowed(grantTarget);
         } else {
             revert TargetNotAllowed(target);
         }

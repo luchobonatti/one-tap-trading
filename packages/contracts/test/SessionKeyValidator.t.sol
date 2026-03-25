@@ -319,6 +319,35 @@ contract SessionKeyValidatorTest is Test {
         assertEq(result, 1);
     }
 
+    function test_ValidateUserOp_InvalidSigDoesNotIncrementSpend() public {
+        // Verify ECDSA-before-state-mutation: a caller with the correct sessionKey address but
+        // a bad ECDSA signature must NOT be able to increment spentAmount (griefing protection).
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
+        bytes32 userOpHash = keccak256("test_hash");
+
+        // Build a signature that encodes the correct sessionKey address but uses a different
+        // private key for the ECDSA portion — this should fail without touching spentAmount.
+        (, uint256 otherPriv) = makeAddrAndKey("otherKey");
+        bytes32 ethSignedHash =
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(otherPriv, ethSignedHash);
+        bytes memory badSig = abi.encodePacked(sessionKey, abi.encodePacked(r, s, v));
+
+        bytes memory userOp = _createPackedUserOp(owner, callData, badSig);
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 1); // VALIDATION_FAILED
+
+        // spentAmount must remain zero — no state mutation occurred.
+        assertEq(validator.getSession(owner).spentAmount, 0);
+    }
+
     function test_ValidateUserOp_NotWrappedInExecute_ReturnsFailed() public {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = OPEN_POSITION_SELECTOR;

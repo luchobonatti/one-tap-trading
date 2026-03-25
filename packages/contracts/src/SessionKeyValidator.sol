@@ -116,18 +116,21 @@ contract SessionKeyValidator is ISessionKeyValidator {
         );
         if (!_isSelectorAllowed(selector, session.allowedSelectors)) return VALIDATION_FAILED;
 
-        // For openPosition: enforce spend limit.
+        // Verify ECDSA signature before mutating state.
+        // Doing this first prevents a griefing attack where an attacker passes the correct
+        // sessionKey address (first 20 bytes of signature) but an invalid ECDSA signature,
+        // incrementing spentAmount and locking the session without ever being authorised.
+        if (!_verifyEcdsa(userOpHash, _sliceBytes(signature, 20, 85), extractedSessionKey)) {
+            return VALIDATION_FAILED;
+        }
+
+        // Only after signature is verified: enforce spend limit and update state.
         // innerCallData layout: [0:4] selector, [4:36] isLong, [36:68] collateral.
         if (selector == OPEN_POSITION_SELECTOR) {
             if (innerCallData.length < 68) return VALIDATION_FAILED;
             uint256 collateral = abi.decode(_sliceBytes(innerCallData, 36, 68), (uint256));
             if (session.spentAmount + collateral > session.spendLimit) return VALIDATION_FAILED;
             session.spentAmount += collateral;
-        }
-
-        // Verify ECDSA signature (session key signed the UserOp hash).
-        if (!_verifyEcdsa(userOpHash, _sliceBytes(signature, 20, 85), extractedSessionKey)) {
-            return VALIDATION_FAILED;
         }
 
         return VALIDATION_SUCCESS;

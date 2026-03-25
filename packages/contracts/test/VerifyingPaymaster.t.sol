@@ -255,7 +255,7 @@ contract VerifyingPaymasterTest is Test {
     }
 
     function test_ValidatePaymasterUserOp_ApproveOnMockUsdc_Succeeds() public {
-        // Single approve call to MockUSDC
+        // Single approve(perpEngine, MaxUint256) — spender == allowedTarget, should pass.
         bytes memory approveData =
             abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max);
         bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), approveData);
@@ -271,8 +271,27 @@ contract VerifyingPaymasterTest is Test {
         assertEq(validationData, 0);
     }
 
+    function test_ValidatePaymasterUserOp_ApproveWrongSpender_Reverts() public {
+        // approve(wrongSpender, MaxUint256) — spender != allowedTarget, must revert.
+        address wrongSpender = makeAddr("wrongSpender");
+        bytes memory approveData =
+            abi.encodeWithSelector(APPROVE_SELECTOR, wrongSpender, type(uint256).max);
+        bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), approveData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, wrongSpender)
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
+
     function test_ValidatePaymasterUserOp_GrantSessionOnValidator_Succeeds() public {
-        // Single grantSession call to SessionKeyValidator
+        // grantSession with targetContract == perpEngine — should pass.
         bytes4[] memory sels = new bytes4[](2);
         sels[0] = OPEN_POSITION_SELECTOR;
         sels[1] = CLOSE_POSITION_SELECTOR;
@@ -296,6 +315,35 @@ contract VerifyingPaymasterTest is Test {
         (, uint256 validationData) =
             paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
         assertEq(validationData, 0);
+    }
+
+    function test_ValidatePaymasterUserOp_GrantSessionWrongTarget_Reverts() public {
+        // grantSession with targetContract != perpEngine — must revert.
+        address wrongTarget = makeAddr("wrongTarget");
+        bytes4[] memory sels = new bytes4[](2);
+        sels[0] = OPEN_POSITION_SELECTOR;
+        sels[1] = CLOSE_POSITION_SELECTOR;
+
+        bytes memory grantData = abi.encodeWithSelector(
+            GRANT_SESSION_SELECTOR,
+            makeAddr("sessionKey"),
+            uint48(block.timestamp + 4 hours),
+            wrongTarget,
+            sels,
+            uint256(10_000e6)
+        );
+        bytes memory execCalldata = abi.encodePacked(sessionKeyValidator, uint256(0), grantData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, wrongTarget)
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
     }
 
     // ─── postOp tests ─────────────────────────────────────────────────────────
