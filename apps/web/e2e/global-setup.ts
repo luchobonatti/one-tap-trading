@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 type StoredSession = {
   validUntil: number;
@@ -12,16 +16,29 @@ type E2EState = {
 };
 
 function isValidState(state: unknown): state is E2EState {
-  return (
-    typeof state === "object" &&
-    state !== null &&
-    "serializedValidator" in state &&
-    typeof (state as Record<string, unknown>).serializedValidator === "string" &&
-    "sessionKey" in state &&
-    typeof (state as Record<string, unknown>).sessionKey === "object" &&
-    "accountAddress" in state &&
-    typeof (state as Record<string, unknown>).accountAddress === "string"
-  );
+  if (typeof state !== "object" || state === null) {
+    return false;
+  }
+
+  const s = state as Record<string, unknown>;
+
+  if (typeof s.serializedValidator !== "string") {
+    return false;
+  }
+
+  if (typeof s.sessionKey !== "object" || s.sessionKey === null) {
+    return false;
+  }
+
+  const sessionKey = s.sessionKey as Record<string, unknown>;
+  if (
+    typeof sessionKey.validUntil !== "number" ||
+    Number.isNaN(sessionKey.validUntil)
+  ) {
+    return false;
+  }
+
+  return typeof s.accountAddress === "string";
 }
 
 export default function globalSetup(): void {
@@ -35,7 +52,15 @@ export default function globalSetup(): void {
     process.exit(1);
   }
 
-  const raw: unknown = JSON.parse(readFileSync(statePath, "utf-8"));
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(statePath, "utf-8"));
+  } catch {
+    console.error(
+      "\n❌ e2e/state.json is malformed. Re-run: pnpm test:e2e:setup\n",
+    );
+    process.exit(1);
+  }
 
   if (!isValidState(raw)) {
     console.error(

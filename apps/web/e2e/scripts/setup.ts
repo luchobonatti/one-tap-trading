@@ -1,7 +1,11 @@
 import { chromium } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, http, parseUnits } from "viem";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import { privateKeyToAccount } from "viem/accounts";
 import { mockUsdcAddress } from "@one-tap/shared-types";
 
@@ -33,6 +37,12 @@ async function fundWithUsdc(accountAddress: `0x${string}`): Promise<void> {
   const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
   if (deployerKey === undefined || deployerKey === "") {
     console.error("❌ DEPLOYER_PRIVATE_KEY not set — cannot fund test account with USDC");
+    process.exit(1);
+  }
+  if (!/^0x[\da-fA-F]{64}$/.test(deployerKey)) {
+    console.error(
+      "❌ DEPLOYER_PRIVATE_KEY is invalid — expected 0x followed by 64 hex characters",
+    );
     process.exit(1);
   }
 
