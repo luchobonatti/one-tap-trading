@@ -10,6 +10,8 @@ import {
 import type { WebAuthnKey } from "@zerodev/webauthn-key";
 import { createSmartAccountClient } from "permissionless";
 import { createPublicClient, http } from "viem";
+import type { Address, Hex } from "viem";
+import { verifyingPaymasterAddress } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 
 const BUNDLER_RPC_URL =
@@ -97,6 +99,7 @@ export async function createAccountFromPasskey(webAuthnKey: WebAuthnKey) {
     chain: megaEthCarrot,
     bundlerTransport: http(BUNDLER_RPC_URL),
     userOperation: { estimateFeesPerGas },
+    paymaster: PAYMASTER_CONFIG,
   });
 
   return { account, client, serializedValidator: validator.getSerializedData() };
@@ -120,7 +123,22 @@ export async function loadAccountFromSerialized(serializedData: string) {
     chain: megaEthCarrot,
     bundlerTransport: http(BUNDLER_RPC_URL),
     userOperation: { estimateFeesPerGas },
+    paymaster: PAYMASTER_CONFIG,
   });
 
   return { account, client };
 }
+
+const PAYMASTER_ADDR = verifyingPaymasterAddress[6343] as Address;
+
+const PAYMASTER_RESPONSE = {
+  paymaster: PAYMASTER_ADDR,
+  paymasterData: "0x" as Hex,
+  paymasterVerificationGasLimit: 300_000n,
+  paymasterPostOpGasLimit: 50_000n,
+} as const;
+
+const PAYMASTER_CONFIG = {
+  getPaymasterData: () => Promise.resolve(PAYMASTER_RESPONSE),
+  getPaymasterStubData: () => Promise.resolve(PAYMASTER_RESPONSE),
+};

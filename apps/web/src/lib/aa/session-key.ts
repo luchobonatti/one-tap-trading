@@ -1,8 +1,10 @@
 "use client";
 
-import { encodeFunctionData, parseUnits, toHex } from "viem";
+import { encodeFunctionData, maxUint256, parseUnits, toHex } from "viem";
 import type { Address, Hex } from "viem";
 import {
+  mockUsdcAbi,
+  mockUsdcAddress,
   sessionKeyValidatorAbi,
   sessionKeyValidatorAddress,
   perpEngineAddress,
@@ -12,8 +14,11 @@ import { getSmartAccountClient } from "@/lib/aa/account";
 const STORAGE_KEY = "ott-session-key-v1";
 const VALID_DURATION_SECONDS = 4 * 3600;
 
-export const OPEN_POSITION_SELECTOR = "0x5a6c3d4a" as Hex;
-export const CLOSE_POSITION_SELECTOR = "0x5c36b186" as Hex;
+// Correct selectors derived from keccak256 of full function signatures.
+export const OPEN_POSITION_SELECTOR =
+  "0x47505d48" as Hex; // openPosition(bool,uint256,uint256,(uint256,uint256,uint256))
+export const CLOSE_POSITION_SELECTOR =
+  "0xd3499b84" as Hex; // closePosition(uint256,(uint256,uint256,uint256))
 
 export type StoredSession = {
   privateKey: Hex;
@@ -53,7 +58,13 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
 
   const session = await generateSessionKey();
 
-  const callData = encodeFunctionData({
+  const approveCallData = encodeFunctionData({
+    abi: mockUsdcAbi,
+    functionName: "approve",
+    args: [perpEngineAddress[6343], maxUint256],
+  });
+
+  const grantCallData = encodeFunctionData({
     abi: sessionKeyValidatorAbi,
     functionName: "grantSession",
     args: [
@@ -70,8 +81,13 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const opHash = await client.sendUserOperation({
     calls: [
       {
+        to: mockUsdcAddress[6343],
+        data: approveCallData,
+        value: 0n,
+      },
+      {
         to: sessionKeyValidatorAddress[6343],
-        data: callData,
+        data: grantCallData,
         value: 0n,
       },
     ],

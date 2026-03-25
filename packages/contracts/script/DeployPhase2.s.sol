@@ -67,7 +67,11 @@ contract DeployPhase2 is Script {
         console.log("SessionKeyValidator:", address(validator));
 
         // ── 2. VerifyingPaymaster ──────────────────────────────────────────────
-        VerifyingPaymaster paymaster = new VerifyingPaymaster(ENTRY_POINT, perpEngine, deployer);
+        //    NOTE: This script deploys the original Phase 2 contracts. For the updated
+        //    VerifyingPaymaster with ERC-7579 support, use DeployPhase2b.s.sol instead.
+        address mockUsdc = existingJson.readAddress(".MockUSDC");
+        VerifyingPaymaster paymaster =
+            new VerifyingPaymaster(ENTRY_POINT, perpEngine, mockUsdc, address(validator), deployer);
         console.log("VerifyingPaymaster: ", address(paymaster));
 
         // ── 3. Fund paymaster deposit ──────────────────────────────────────────

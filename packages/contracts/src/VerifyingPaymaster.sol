@@ -7,13 +7,30 @@ import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOp
 import { IVerifyingPaymaster } from "./interfaces/IVerifyingPaymaster.sol";
 
 /// @title VerifyingPaymaster
-/// @notice Sponsors gas for trading UserOperations that target PerpEngine with allowed selectors.
-///         Validates callData to ensure only openPosition and closePosition are called.
+/// @notice Sponsors gas for trading UserOperations (openPosition/closePosition on PerpEngine)
+///         and delegation UserOperations (USDC approve + grantSession).
+///         Supports Kernel v3 ERC-7579 execute(bytes32,bytes) format for both single and
+///         batch calls.
 contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
+    // ─── Types ────────────────────────────────────────────────────────────────
+
+    /// @dev ERC-7579 batch execution struct matching Kernel v3 batch encoding.
+    struct Execution {
+        address target;
+        uint256 value;
+        bytes callData;
+    }
+
     // ─── Constants ────────────────────────────────────────────────────────────
 
-    /// @notice Selector for SmartAccount execute(address,uint256,bytes) function.
-    bytes4 private constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
+    /// @notice Selector for Kernel v3 ERC-7579 execute(bytes32,bytes).
+    bytes4 private constant EXECUTE_SELECTOR = bytes4(keccak256("execute(bytes32,bytes)"));
+
+    /// @notice ERC-7579 single-call type (first byte of mode = 0x00).
+    bytes1 private constant CALLTYPE_SINGLE = 0x00;
+
+    /// @notice ERC-7579 batch-call type (first byte of mode = 0x01).
+    bytes1 private constant CALLTYPE_BATCH = 0x01;
 
     /// @notice Selector for PerpEngine openPosition(bool,uint256,uint256,(uint256,uint256,uint256)).
     bytes4 private constant OPEN_POSITION_SELECTOR =
@@ -23,6 +40,16 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     bytes4 private constant CLOSE_POSITION_SELECTOR =
         bytes4(keccak256("closePosition(uint256,(uint256,uint256,uint256))"));
 
+    /// @notice Selector for ERC-20 approve(address,uint256).
+    bytes4 private constant APPROVE_SELECTOR = bytes4(keccak256("approve(address,uint256)"));
+
+    /// @notice Selector for SessionKeyValidator grantSession(address,uint48,address,bytes4[],uint256).
+    bytes4 private constant GRANT_SESSION_SELECTOR =
+        bytes4(keccak256("grantSession(address,uint48,address,bytes4[],uint256)"));
+
+    /// @notice Default gas allowance per UserOperation (5 M — covers MegaETH testnet gas).
+    uint256 private constant DEFAULT_GAS_ALLOWANCE = 5_000_000;
+
     // ─── Immutables ───────────────────────────────────────────────────────────
 
     /// @notice The EntryPoint contract that manages UserOperations.
@@ -30,24 +57,43 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     // ─── State ────────────────────────────────────────────────────────────────
 
-    /// @notice The allowed target address (PerpEngine) for sponsored operations.
+    /// @notice The allowed trading target address (PerpEngine).
     address public allowedTarget;
 
-    /// @notice Maximum gas allowance per UserOperation (default: 500k).
+    /// @notice MockUSDC address — approve() calls to this target are sponsored.
+    address public mockUsdc;
+
+    /// @notice SessionKeyValidator address — grantSession() calls are sponsored.
+    address public sessionKeyValidator;
+
+    /// @notice Maximum gas cost (in wei) per UserOperation that this paymaster will sponsor.
     uint256 public gasAllowancePerOp;
 
     // ─── Constructor ───────────────────────────────────────────────────────────
 
-    /// @param entryPoint_ The EntryPoint contract address.
-    /// @param allowedTarget_ The allowed target address (PerpEngine).
-    /// @param owner_ The owner address for administrative functions.
-    constructor(address entryPoint_, address allowedTarget_, address owner_) Ownable(owner_) {
-        if (entryPoint_ == address(0) || allowedTarget_ == address(0)) {
+    /// @param entryPoint_         The EntryPoint v0.7 contract address.
+    /// @param allowedTarget_      PerpEngine address (trading calls are sponsored here).
+    /// @param mockUsdc_           MockUSDC address (approve calls are sponsored here).
+    /// @param sessionKeyValidator_ SessionKeyValidator address (grantSession calls sponsored).
+    /// @param owner_              Owner address for administrative functions.
+    constructor(
+        address entryPoint_,
+        address allowedTarget_,
+        address mockUsdc_,
+        address sessionKeyValidator_,
+        address owner_
+    ) Ownable(owner_) {
+        if (
+            entryPoint_ == address(0) || allowedTarget_ == address(0) || mockUsdc_ == address(0)
+                || sessionKeyValidator_ == address(0)
+        ) {
             revert ZeroAddress();
         }
         entryPoint = entryPoint_;
         allowedTarget = allowedTarget_;
-        gasAllowancePerOp = 500_000;
+        mockUsdc = mockUsdc_;
+        sessionKeyValidator = sessionKeyValidator_;
+        gasAllowancePerOp = DEFAULT_GAS_ALLOWANCE;
     }
 
     // ─── IPaymaster implementation ─────────────────────────────────────────────
@@ -58,63 +104,46 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
         bytes32, // userOpHash (unused)
         uint256 maxCost
     ) external returns (bytes memory context, uint256 validationData) {
-        // Only EntryPoint can call this function
-        if (msg.sender != entryPoint) {
-            revert NotEntryPoint(msg.sender);
-        }
+        if (msg.sender != entryPoint) revert NotEntryPoint(msg.sender);
+        if (maxCost > gasAllowancePerOp) revert GasAllowanceExceeded(maxCost, gasAllowancePerOp);
 
-        // Check gas allowance
-        if (maxCost > gasAllowancePerOp) {
-            revert GasAllowanceExceeded(maxCost, gasAllowancePerOp);
-        }
-
-        // Parse callData to extract target and selector
         bytes calldata callData = userOp.callData;
-        if (callData.length < 4) {
-            revert SelectorNotAllowed(bytes4(0));
-        }
+        if (callData.length < 4) revert SelectorNotAllowed(bytes4(0));
 
         bytes4 outerSelector = bytes4(callData[0:4]);
-        address target;
-        bytes4 innerSelector;
 
         if (outerSelector == EXECUTE_SELECTOR) {
-            // callData = execute(address target, uint256 value, bytes data)
-            // Decode: skip selector (4 bytes), then decode (address, uint256, bytes)
-            if (callData.length < 100) {
-                // Not enough data for execute call
+            // Kernel v3 ERC-7579: execute(bytes32 mode, bytes executionCalldata)
+            // callData[4:] = ABI-encoded (bytes32, bytes) — valid calldata slice decode.
+            (bytes32 mode, bytes memory execCalldata) = abi.decode(callData[4:], (bytes32, bytes));
+
+            bytes1 callType = bytes1(mode);
+
+            if (callType == CALLTYPE_SINGLE) {
+                // execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
+                // Layout: [0:20] target, [20:52] value, [52+] innerCallData
+                (address target, bytes4 innerSelector) = _extractSingleCall(execCalldata);
+                _requireAllowedCall(target, innerSelector);
+            } else if (callType == CALLTYPE_BATCH) {
+                // execCalldata = abi.encode(Execution[]) where Execution = {target, value, callData}
+                Execution[] memory execs = abi.decode(execCalldata, (Execution[]));
+                for (uint256 i = 0; i < execs.length; ++i) {
+                    bytes memory cd = execs[i].callData;
+                    if (cd.length < 4) revert SelectorNotAllowed(bytes4(0));
+                    bytes4 sel;
+                    assembly {
+                        sel := mload(add(cd, 0x20))
+                    }
+                    _requireAllowedCall(execs[i].target, sel);
+                }
+            } else {
                 revert SelectorNotAllowed(outerSelector);
             }
-
-            // Decode the execute parameters
-            (address decodedTarget,, bytes memory innerData) =
-                abi.decode(callData[4:], (address, uint256, bytes));
-            target = decodedTarget;
-
-            // Extract inner selector from the data
-            if (innerData.length < 4) {
-                revert SelectorNotAllowed(bytes4(0));
-            }
-            // Extract first 4 bytes as selector
-            innerSelector =
-                bytes4(abi.encodePacked(innerData[0], innerData[1], innerData[2], innerData[3]));
         } else {
-            // Assume callData is the direct call to the target
-            target = allowedTarget;
-            innerSelector = outerSelector;
+            // Direct call (no execute wrapper) — assume target is allowedTarget.
+            _requireAllowedCall(allowedTarget, outerSelector);
         }
 
-        // Verify target is the allowed target
-        if (target != allowedTarget) {
-            revert TargetNotAllowed(target);
-        }
-
-        // Verify selector is allowed (openPosition or closePosition)
-        if (innerSelector != OPEN_POSITION_SELECTOR && innerSelector != CLOSE_POSITION_SELECTOR) {
-            revert SelectorNotAllowed(innerSelector);
-        }
-
-        // Return context for postOp and validation data (0 = valid)
         context = abi.encode(userOp.sender, maxCost);
         validationData = 0;
     }
@@ -128,15 +157,8 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     )
         external
     {
-        // Only EntryPoint can call this function
-        if (msg.sender != entryPoint) {
-            revert NotEntryPoint(msg.sender);
-        }
-
-        // Decode context
+        if (msg.sender != entryPoint) revert NotEntryPoint(msg.sender);
         (address sender,) = abi.decode(context, (address, uint256));
-
-        // Emit event if operation succeeded or reverted (but not if postOp itself reverted)
         if (mode == PostOpMode.opSucceeded || mode == PostOpMode.opReverted) {
             emit GasSponsored(sender, actualGasCost);
         }
@@ -146,19 +168,33 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     /// @inheritdoc IVerifyingPaymaster
     function setAllowedTarget(address newTarget) external onlyOwner {
-        if (newTarget == address(0)) {
-            revert ZeroAddress();
-        }
-        address oldTarget = allowedTarget;
+        if (newTarget == address(0)) revert ZeroAddress();
+        address old = allowedTarget;
         allowedTarget = newTarget;
-        emit AllowedTargetUpdated(oldTarget, newTarget);
+        emit AllowedTargetUpdated(old, newTarget);
+    }
+
+    /// @inheritdoc IVerifyingPaymaster
+    function setMockUsdc(address newMockUsdc) external onlyOwner {
+        if (newMockUsdc == address(0)) revert ZeroAddress();
+        address old = mockUsdc;
+        mockUsdc = newMockUsdc;
+        emit MockUsdcUpdated(old, newMockUsdc);
+    }
+
+    /// @inheritdoc IVerifyingPaymaster
+    function setSessionKeyValidator(address newValidator) external onlyOwner {
+        if (newValidator == address(0)) revert ZeroAddress();
+        address old = sessionKeyValidator;
+        sessionKeyValidator = newValidator;
+        emit SessionKeyValidatorUpdated(old, newValidator);
     }
 
     /// @inheritdoc IVerifyingPaymaster
     function setGasAllowancePerOp(uint256 newAllowance) external onlyOwner {
-        uint256 oldAllowance = gasAllowancePerOp;
+        uint256 old = gasAllowancePerOp;
         gasAllowancePerOp = newAllowance;
-        emit GasAllowanceUpdated(oldAllowance, newAllowance);
+        emit GasAllowanceUpdated(old, newAllowance);
     }
 
     // ─── Deposit management ────────────────────────────────────────────────────
@@ -180,6 +216,51 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     /// @notice Receive ETH for gas funding.
     receive() external payable { }
+
+    // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    /// @dev Extract target address and inner selector from ERC-7579 single-call execCalldata.
+    ///      execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
+    ///      Layout: bytes [0:20] = target, [20:52] = value, [52:56] = innerSelector.
+    ///      Uses assembly for efficient extraction without looping.
+    function _extractSingleCall(bytes memory execCalldata)
+        internal
+        pure
+        returns (address target, bytes4 innerSelector)
+    {
+        // Need at least 20 (address) + 32 (uint256) + 4 (selector) = 56 bytes.
+        if (execCalldata.length < 56) revert SelectorNotAllowed(bytes4(0));
+        assembly {
+            // execCalldata + 0x20 = start of packed data (skip length word).
+            let ptr := add(execCalldata, 0x20)
+            // Address occupies first 20 bytes — load 32, shift right 96 bits (12 bytes).
+            target := shr(96, mload(ptr))
+            // innerSelector starts at byte 52 — load 32 bytes, bytes4 takes leftmost 4.
+            innerSelector := mload(add(ptr, 52))
+        }
+    }
+
+    /// @dev Revert if a (target, selector) pair is not in the allowed whitelist.
+    ///      PerpEngine: openPosition, closePosition.
+    ///      MockUSDC:   approve.
+    ///      SessionKeyValidator: grantSession.
+    function _requireAllowedCall(address target, bytes4 selector) internal view {
+        if (target == allowedTarget) {
+            if (selector != OPEN_POSITION_SELECTOR && selector != CLOSE_POSITION_SELECTOR) {
+                revert SelectorNotAllowed(selector);
+            }
+        } else if (target == mockUsdc) {
+            if (selector != APPROVE_SELECTOR) {
+                revert SelectorNotAllowed(selector);
+            }
+        } else if (target == sessionKeyValidator) {
+            if (selector != GRANT_SESSION_SELECTOR) {
+                revert SelectorNotAllowed(selector);
+            }
+        } else {
+            revert TargetNotAllowed(target);
+        }
+    }
 }
 
 // ─── IEntryPoint interface ────────────────────────────────────────────────────
