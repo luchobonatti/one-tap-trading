@@ -7,6 +7,7 @@ import {
 import {
   registerWebAuthnPasskey,
   storeWebAuthnKey,
+  clearWebAuthnKey,
   loadWebAuthnKey,
 } from "@/lib/aa/passkey";
 import type { Address } from "viem";
@@ -21,10 +22,11 @@ export async function createPasskeyAccount(
   username: string,
 ): Promise<SmartAccountResult> {
   const webAuthnKey = await registerWebAuthnPasskey(username);
+  storeWebAuthnKey(webAuthnKey);
+
   const { account, serializedValidator } =
     await createAccountFromPasskey(webAuthnKey);
 
-  storeWebAuthnKey(webAuthnKey);
   localStorage.setItem(VALIDATOR_STORAGE_KEY, serializedValidator);
 
   return { address: account.address };
@@ -56,6 +58,7 @@ export async function loadPasskeyAccount(): Promise<SmartAccountResult | null> {
 
 export function clearPasskeyAccount(): void {
   localStorage.removeItem(VALIDATOR_STORAGE_KEY);
+  clearWebAuthnKey();
 }
 
 export function hasStoredAccount(): boolean {

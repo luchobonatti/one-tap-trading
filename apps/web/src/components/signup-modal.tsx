@@ -12,10 +12,23 @@ export function SignupModal({ account }: Props) {
   if (status === "ready") return null;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <dialog
+      open
+      className="fixed inset-0 m-0 flex h-full w-full max-w-full items-center justify-center bg-black/80 backdrop-blur-sm"
+      aria-labelledby="signup-modal-title"
+      aria-describedby="signup-modal-description"
+    >
       <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-8 shadow-2xl">
-        <h2 className="text-2xl font-bold text-white">One Tap Trading</h2>
-        <p className="mt-2 text-sm text-zinc-400">
+        <h2
+          id="signup-modal-title"
+          className="text-2xl font-bold text-white"
+        >
+          One Tap Trading
+        </h2>
+        <p
+          id="signup-modal-description"
+          className="mt-2 text-sm text-zinc-400"
+        >
           Create a smart account with your device passkey. No seed phrases, no
           wallet app required.
         </p>
@@ -64,6 +77,6 @@ export function SignupModal({ account }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

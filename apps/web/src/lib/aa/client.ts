@@ -26,31 +26,56 @@ export const publicClient = createPublicClient({
 });
 
 type PimlicoGasPriceResponse = {
-  result: {
-    standard: {
+  result?: {
+    standard?: {
       maxFeePerGas: string;
       maxPriorityFeePerGas: string;
     };
   };
+  error?: {
+    code?: number;
+    message?: string;
+  };
 };
 
 async function estimateFeesPerGas() {
-  const response = await fetch(BUNDLER_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "pimlico_getUserOperationGasPrice",
-      params: [],
-    }),
-  });
-  const data = (await response.json()) as PimlicoGasPriceResponse;
-  const { maxFeePerGas, maxPriorityFeePerGas } = data.result.standard;
-  return {
-    maxFeePerGas: BigInt(maxFeePerGas),
-    maxPriorityFeePerGas: BigInt(maxPriorityFeePerGas),
-  };
+  try {
+    const response = await fetch(BUNDLER_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "pimlico_getUserOperationGasPrice",
+        params: [],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Bundler RPC request failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as PimlicoGasPriceResponse;
+
+    if (data.error !== undefined) {
+      const code = data.error.code !== undefined ? ` (code ${data.error.code})` : "";
+      throw new Error(`Bundler RPC error${code}: ${data.error.message ?? "unknown"}`);
+    }
+
+    const standard = data.result?.standard;
+    if (standard?.maxFeePerGas === undefined || standard.maxPriorityFeePerGas === undefined) {
+      throw new Error("Unexpected bundler gas price response shape");
+    }
+
+    return {
+      maxFeePerGas: BigInt(standard.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(standard.maxPriorityFeePerGas),
+    };
+  } catch {
+    return publicClient.estimateFeesPerGas();
+  }
 }
 
 export async function createAccountFromPasskey(webAuthnKey: WebAuthnKey) {
