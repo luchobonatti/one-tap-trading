@@ -40,6 +40,8 @@ MegaETH Carrot testnet (chain ID 6343):
 | PriceOracle | `0x7FBe2a83113A6374964d6fe25C000402471079d4` |
 | MockUSDC | `0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB` |
 | MockPriceFeed | `0xd152AaBf6e4dA27004dC4a4B29da4a7754318469` |
+| SessionKeyValidator | `0x672B55126649951AfbbD13d82015691BC8BAD007` |
+| VerifyingPaymaster | `0xbcB4B1FdEC3958BEAc5542B4752f7FAf4BcaF226` |
 
 Full deployment artifact: [`packages/contracts/deployments/6343.json`](packages/contracts/deployments/6343.json)
 
