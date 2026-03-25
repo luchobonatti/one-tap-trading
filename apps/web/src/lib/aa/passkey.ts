@@ -26,7 +26,6 @@ export async function registerWebAuthnPasskey(
       authenticatorSelection: {
         residentKey: "required",
         userVerification: "required",
-        authenticatorAttachment: "platform",
       },
       attestation: "none",
       timeout: 60_000,
