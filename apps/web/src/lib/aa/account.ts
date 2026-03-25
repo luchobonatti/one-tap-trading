@@ -4,6 +4,7 @@ import {
   createAccountFromPasskey,
   loadAccountFromSerialized,
 } from "@/lib/aa/client";
+export { loadAccountFromSerialized };
 import {
   registerWebAuthnPasskey,
   storeWebAuthnKey,
@@ -63,4 +64,11 @@ export function clearPasskeyAccount(): void {
 
 export function hasStoredAccount(): boolean {
   return localStorage.getItem(VALIDATOR_STORAGE_KEY) !== null;
+}
+
+export async function getSmartAccountClient() {
+  const serialized = localStorage.getItem(VALIDATOR_STORAGE_KEY);
+  if (serialized === null) throw new Error("No stored account — create a passkey account first");
+  const { client } = await loadAccountFromSerialized(serialized);
+  return client;
 }
