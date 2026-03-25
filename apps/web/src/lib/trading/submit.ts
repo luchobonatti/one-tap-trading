@@ -25,6 +25,11 @@ const BUNDLER_RPC_URL =
 const PERP_ENGINE = perpEngineAddress[6343];
 const PRICE_ORACLE = priceOracleAddress[6343];
 
+const bundlerClient = createBundlerClient({
+  transport: http(BUNDLER_RPC_URL),
+  chain: megaEthCarrot,
+});
+
 const MAX_DEVIATION_BPS = 200n;
 const BPS_DENOM = 10_000n;
 const DEADLINE_SECONDS = 60n;
@@ -48,13 +53,16 @@ export type CloseTradeParams = {
 };
 
 export async function getCurrentPriceBounds(): Promise<PriceBounds> {
-  const [price] = await publicClient.readContract({
-    abi: priceOracleAbi,
-    address: PRICE_ORACLE,
-    functionName: "getPrice",
-  });
+  const [[price], { timestamp }] = await Promise.all([
+    publicClient.readContract({
+      abi: priceOracleAbi,
+      address: PRICE_ORACLE,
+      functionName: "getPrice",
+    }),
+    publicClient.getBlock(),
+  ]);
   const maxDeviation = (price * MAX_DEVIATION_BPS) / BPS_DENOM;
-  const deadline = BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS;
+  const deadline = timestamp + DEADLINE_SECONDS;
   return { expectedPrice: price, maxDeviation, deadline };
 }
 
@@ -98,9 +106,5 @@ export async function closeTrade(params: CloseTradeParams): Promise<Hex> {
 }
 
 export async function waitForOp(opHash: Hex): Promise<void> {
-  const bundlerClient = createBundlerClient({
-    transport: http(BUNDLER_RPC_URL),
-    chain: megaEthCarrot,
-  });
   await bundlerClient.waitForUserOperationReceipt({ hash: opHash });
 }

@@ -8,6 +8,7 @@ import {
 vi.mock("@/lib/aa/client", () => ({
   publicClient: {
     readContract: vi.fn(),
+    getBlock: vi.fn(),
   },
   estimateFeesPerGas: vi.fn(),
 }));
@@ -28,8 +29,11 @@ import { publicClient } from "@/lib/aa/client";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
 
 const mockReadContract = vi.mocked(publicClient.readContract);
+const mockGetBlock = vi.mocked(publicClient.getBlock);
 const mockLoadSession = vi.mocked(loadSessionKey);
 const mockIsExpired = vi.mocked(isSessionExpired);
+
+const CHAIN_TIMESTAMP = 1_800_000_000n;
 
 const MOCK_SESSION = {
   privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as `0x${string}`,
@@ -39,7 +43,8 @@ const MOCK_SESSION = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockReadContract.mockResolvedValue([2000_00000000n, BigInt(Date.now())] as unknown as never);
+  mockReadContract.mockResolvedValue([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
+  mockGetBlock.mockResolvedValue({ timestamp: CHAIN_TIMESTAMP } as unknown as never);
   mockLoadSession.mockReturnValue(MOCK_SESSION);
   mockIsExpired.mockReturnValue(false);
 });
@@ -56,11 +61,9 @@ describe("getCurrentPriceBounds", () => {
     expect(bounds.maxDeviation).toBe(expected);
   });
 
-  it("sets deadline ~60 seconds in the future", async () => {
-    const before = BigInt(Math.floor(Date.now() / 1000));
+  it("sets deadline to chain block.timestamp + 60s", async () => {
     const bounds = await getCurrentPriceBounds();
-    expect(bounds.deadline).toBeGreaterThanOrEqual(before + 59n);
-    expect(bounds.deadline).toBeLessThanOrEqual(before + 61n);
+    expect(bounds.deadline).toBe(CHAIN_TIMESTAMP + 60n);
   });
 });
 
