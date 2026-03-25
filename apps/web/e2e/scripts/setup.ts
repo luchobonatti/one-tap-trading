@@ -3,6 +3,9 @@ import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, http, parseUnits } from "viem";
+import { createKernelAccount } from "@zerodev/sdk";
+import { KERNEL_V3_1, getEntryPoint } from "@zerodev/sdk/constants";
+import { deserializePasskeyValidator } from "@zerodev/passkey-validator";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,6 +35,29 @@ const MOCK_USDC_ABI = [
     stateMutability: "nonpayable",
   },
 ] as const;
+
+const ENTRY_POINT = getEntryPoint("0.7");
+
+async function deriveAccountAddress(serializedData: string): Promise<string> {
+  if (serializedData === "") {
+    throw new Error("Serialized validator is empty — passkey account creation may have failed");
+  }
+  const client = createPublicClient({
+    chain: megaEthCarrot,
+    transport: http(CHAIN_RPC),
+  });
+  const validator = await deserializePasskeyValidator(client, {
+    serializedData,
+    entryPoint: ENTRY_POINT,
+    kernelVersion: KERNEL_V3_1,
+  });
+  const account = await createKernelAccount(client, {
+    entryPoint: ENTRY_POINT,
+    kernelVersion: KERNEL_V3_1,
+    plugins: { sudo: validator },
+  });
+  return account.address;
+}
 
 async function fundWithUsdc(accountAddress: `0x${string}`): Promise<void> {
   const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
@@ -112,35 +138,10 @@ async function run(): Promise<void> {
     () => localStorage.getItem("ott-validator-v1") ?? "",
   );
 
-  const accountAddress = await page.evaluate((): string => {
-    const raw = localStorage.getItem("ott-validator-v1");
-    if (raw === null) return "";
-    try {
-      const segment = raw.split(".")[1];
-      if (segment === undefined) return "";
-      const parsed: unknown = JSON.parse(atob(segment));
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        "address" in parsed
-      ) {
-        const addr = (parsed as Record<string, unknown>).address;
-        if (typeof addr === "string") return addr;
-      }
-    } catch {
-    }
-    return "";
-  });
-
-  if (accountAddress !== "" && /^0x[\da-fA-F]{40}$/.test(accountAddress)) {
-    await fundWithUsdc(accountAddress as `0x${string}`);
-  } else if (accountAddress !== "") {
-    console.error("❌ Extracted account address is malformed:", accountAddress);
-    process.exit(1);
-  } else {
-    console.warn("⚠️  Could not extract account address — skipping USDC funding");
-    console.warn("   You may need to fund the account manually before trading tests pass");
-  }
+  console.log("⏳ Deriving smart account address from serialized validator…");
+  const accountAddress = await deriveAccountAddress(serializedValidator);
+  console.log(`  Account address: ${accountAddress}`);
+  await fundWithUsdc(accountAddress as `0x${string}`);
 
   console.log("\n⏳ Delegating session key…");
   await page.getByRole("button", { name: "Enable Trading" }).click();
