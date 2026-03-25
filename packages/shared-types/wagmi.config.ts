@@ -19,6 +19,8 @@ export default defineConfig({
         "PriceOracle.sol/*.json",
         "MockUSDC.sol/*.json",
         "MockPriceFeed.sol/*.json",
+        "SessionKeyValidator.sol/*.json",
+        "VerifyingPaymaster.sol/*.json",
       ],
       deployments: {
         PerpEngine: { [CARROT]: carrot.PerpEngine },
@@ -26,6 +28,8 @@ export default defineConfig({
         PriceOracle: { [CARROT]: carrot.PriceOracle },
         MockUSDC: { [CARROT]: carrot.MockUSDC },
         MockPriceFeed: { [CARROT]: carrot.MockPriceFeed },
+        SessionKeyValidator: { [CARROT]: carrot.SessionKeyValidator },
+        VerifyingPaymaster: { [CARROT]: carrot.VerifyingPaymaster },
       },
     }),
   ],
