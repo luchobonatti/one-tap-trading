@@ -10,6 +10,7 @@ import {
   perpEngineAddress,
 } from "@one-tap/shared-types";
 import { getSmartAccountClient } from "@/lib/aa/account";
+import { publicClient } from "@/lib/aa/client";
 
 const INSTALL_MODULE_ABI = [
   {
@@ -22,6 +23,20 @@ const INSTALL_MODULE_ABI = [
     ],
     outputs: [],
     stateMutability: "payable",
+  },
+] as const;
+
+const IS_MODULE_INSTALLED_ABI = [
+  {
+    name: "isModuleInstalled",
+    type: "function",
+    inputs: [
+      { name: "moduleTypeId", type: "uint256" },
+      { name: "module", type: "address" },
+      { name: "additionalContext", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
   },
 ] as const;
 
@@ -93,31 +108,49 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const client = await getSmartAccountClient();
   const smartAccountAddress = client.account.address as Address;
 
+  // readContract reverts when the account is not yet deployed (first-time user),
+  // so we treat any failure as "not installed".
+  let moduleInstalled = false;
+  try {
+    moduleInstalled = await publicClient.readContract({
+      address: smartAccountAddress,
+      abi: IS_MODULE_INSTALLED_ABI,
+      functionName: "isModuleInstalled",
+      args: [1n, sessionKeyValidatorAddress[6343], "0x"],
+    });
+  } catch {
+    moduleInstalled = false;
+  }
+
   const installModuleCallData = encodeFunctionData({
     abi: INSTALL_MODULE_ABI,
     functionName: "installModule",
     args: [1n, sessionKeyValidatorAddress[6343], "0x"],
   });
 
-  const opHash = await client.sendUserOperation({
-    calls: [
-      {
-        to: mockUsdcAddress[6343],
-        data: approveCallData,
-        value: 0n,
-      },
-      {
-        to: smartAccountAddress,
-        data: installModuleCallData,
-        value: 0n,
-      },
-      {
-        to: sessionKeyValidatorAddress[6343],
-        data: grantCallData,
-        value: 0n,
-      },
-    ],
-  });
+  const calls = [
+    {
+      to: mockUsdcAddress[6343],
+      data: approveCallData,
+      value: 0n,
+    },
+    ...(moduleInstalled
+      ? []
+      : [
+          {
+            to: smartAccountAddress,
+            data: installModuleCallData,
+            value: 0n,
+          },
+        ]),
+    {
+      to: sessionKeyValidatorAddress[6343],
+      data: grantCallData,
+      value: 0n,
+    },
+  ];
+
+  const opHash = await client.sendUserOperation({ calls });
 
   await client.waitForUserOperationReceipt({ hash: opHash });
 
