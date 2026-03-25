@@ -74,7 +74,7 @@ contract DeployPhase2 is Script {
         //    Calls EntryPoint.depositTo on behalf of the paymaster so it can
         //    sponsor UserOperation gas from the first block.
         paymaster.deposit{ value: PAYMASTER_DEPOSIT }();
-        console.log("Paymaster funded:    0.1 ETH");
+        console.log("Paymaster funded:    ", PAYMASTER_DEPOSIT);
 
         vm.stopBroadcast();
 
@@ -82,10 +82,29 @@ contract DeployPhase2 is Script {
         //    Key-path writes update only the specified keys; all Phase 1 addresses
         //    (MockUSDC, MockPriceFeed, PriceOracle, Settlement, PerpEngine, deployer)
         //    remain untouched.
-        vm.writeJson(vm.toString(address(validator)), outPath, ".SessionKeyValidator");
-        vm.writeJson(vm.toString(address(paymaster)), outPath, ".VerifyingPaymaster");
+        //
+        //    _toHex produces checksumless lowercase hex to match the Phase 1 format
+        //    written by DeployPhase1._toHex — keeping 6343.json internally consistent.
+        vm.writeJson(_toHex(address(validator)), outPath, ".SessionKeyValidator");
+        vm.writeJson(_toHex(address(paymaster)), outPath, ".VerifyingPaymaster");
 
         console.log("");
         console.log("Addresses written to:", outPath);
+    }
+
+    /// @dev Convert an address to its checksumless lowercase hex string (0x-prefixed).
+    ///      Matches the format used by DeployPhase1._toHex so all entries in the
+    ///      deployment JSON share a consistent casing.
+    function _toHex(address addr) internal pure returns (string memory) {
+        bytes memory alphabet = "0123456789abcdef";
+        bytes20 raw = bytes20(addr);
+        bytes memory str = new bytes(42);
+        str[0] = "0";
+        str[1] = "x";
+        for (uint256 i; i < 20; ++i) {
+            str[2 + i * 2] = alphabet[uint8(raw[i] >> 4)];
+            str[3 + i * 2] = alphabet[uint8(raw[i] & 0x0f)];
+        }
+        return string(str);
     }
 }
