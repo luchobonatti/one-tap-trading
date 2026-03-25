@@ -53,7 +53,7 @@ contract VerifyingPaymasterTest is Test {
         assertEq(paymaster.allowedTarget(), perpEngine);
         assertEq(paymaster.mockUsdc(), mockUsdc);
         assertEq(paymaster.sessionKeyValidator(), sessionKeyValidator);
-        assertEq(paymaster.gasAllowancePerOp(), 5_000_000);
+        assertEq(paymaster.gasAllowancePerOp(), 1_000_000_000);
         assertEq(paymaster.owner(), owner);
     }
 
@@ -95,12 +95,12 @@ contract VerifyingPaymasterTest is Test {
     function test_ValidatePaymasterUserOp_GasExceedsAllowance_Reverts() public {
         PackedUserOperation memory userOp = _createValidUserOp();
         bytes32 userOpHash = keccak256(abi.encode(userOp));
-        uint256 maxCost = 6_000_000; // Exceeds default 5_000_000
+        uint256 maxCost = 1_100_000_000; // Exceeds default 1_000_000_000
 
         vm.prank(entryPoint);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVerifyingPaymaster.GasAllowanceExceeded.selector, maxCost, 5_000_000
+                IVerifyingPaymaster.GasAllowanceExceeded.selector, maxCost, 1_000_000_000
             )
         );
         paymaster.validatePaymasterUserOp(userOp, userOpHash, maxCost);
@@ -472,7 +472,7 @@ contract VerifyingPaymasterTest is Test {
 
         vm.prank(owner);
         vm.expectEmit(false, false, false, true);
-        emit IVerifyingPaymaster.GasAllowanceUpdated(5_000_000, newAllowance);
+        emit IVerifyingPaymaster.GasAllowanceUpdated(1_000_000_000, newAllowance);
         paymaster.setGasAllowancePerOp(newAllowance);
 
         assertEq(paymaster.gasAllowancePerOp(), newAllowance);
@@ -519,17 +519,17 @@ contract VerifyingPaymasterTest is Test {
     // ─── Fuzz tests ───────────────────────────────────────────────────────────
 
     function test_fuzz_ValidatePaymasterUserOp_GasLimit(uint256 maxCost) public {
-        maxCost = bound(maxCost, 1, 10_000_000);
+        maxCost = bound(maxCost, 1, 2_000_000_000);
 
         PackedUserOperation memory userOp = _createValidUserOp();
         bytes32 userOpHash = keccak256(abi.encode(userOp));
 
         vm.prank(entryPoint);
 
-        if (maxCost > 5_000_000) {
+        if (maxCost > 1_000_000_000) {
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    IVerifyingPaymaster.GasAllowanceExceeded.selector, maxCost, 5_000_000
+                    IVerifyingPaymaster.GasAllowanceExceeded.selector, maxCost, 1_000_000_000
                 )
             );
             paymaster.validatePaymasterUserOp(userOp, userOpHash, maxCost);
@@ -546,7 +546,7 @@ contract VerifyingPaymasterTest is Test {
     }
 
     function test_fuzz_SetGasAllowancePerOp(uint256 newAllowance) public {
-        newAllowance = bound(newAllowance, 1, 100_000_000);
+        newAllowance = bound(newAllowance, 1, 2_000_000_000);
 
         vm.prank(owner);
         paymaster.setGasAllowancePerOp(newAllowance);
