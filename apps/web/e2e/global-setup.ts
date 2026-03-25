@@ -6,13 +6,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 type StoredSession = {
+  privateKey: `0x${string}`;
+  address: `0x${string}`;
   validUntil: number;
 };
 
 type E2EState = {
   serializedValidator: string;
   sessionKey: StoredSession;
-  accountAddress: string;
+  accountAddress: `0x${string}`;
 };
 
 function isValidState(state: unknown): state is E2EState {
@@ -32,13 +34,19 @@ function isValidState(state: unknown): state is E2EState {
 
   const sessionKey = s.sessionKey as Record<string, unknown>;
   if (
+    typeof sessionKey.privateKey !== "string" ||
+    !sessionKey.privateKey.startsWith("0x") ||
+    typeof sessionKey.address !== "string" ||
+    !sessionKey.address.startsWith("0x") ||
     typeof sessionKey.validUntil !== "number" ||
     Number.isNaN(sessionKey.validUntil)
   ) {
     return false;
   }
 
-  return typeof s.accountAddress === "string";
+  return (
+    typeof s.accountAddress === "string" && s.accountAddress.startsWith("0x")
+  );
 }
 
 export default function globalSetup(): void {

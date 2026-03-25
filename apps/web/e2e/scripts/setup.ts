@@ -132,8 +132,11 @@ async function run(): Promise<void> {
     return "";
   });
 
-  if (accountAddress !== "") {
+  if (accountAddress !== "" && /^0x[\da-fA-F]{40}$/.test(accountAddress)) {
     await fundWithUsdc(accountAddress as `0x${string}`);
+  } else if (accountAddress !== "") {
+    console.error("❌ Extracted account address is malformed:", accountAddress);
+    process.exit(1);
   } else {
     console.warn("⚠️  Could not extract account address — skipping USDC funding");
     console.warn("   You may need to fund the account manually before trading tests pass");
@@ -150,9 +153,17 @@ async function run(): Promise<void> {
 
   await browser.close();
 
+  let parsedSessionKey: unknown;
+  try {
+    parsedSessionKey = JSON.parse(sessionKeyRaw);
+  } catch {
+    console.error("❌ Failed to parse session key from sessionStorage — delegation may have failed");
+    process.exit(1);
+  }
+
   const state = {
     serializedValidator,
-    sessionKey: JSON.parse(sessionKeyRaw) as unknown,
+    sessionKey: parsedSessionKey,
     accountAddress,
     createdAt: new Date().toISOString(),
   };

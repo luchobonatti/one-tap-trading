@@ -76,5 +76,9 @@ test.describe("trading — authenticated, real testnet", () => {
     ]) {
       await expect(page.getByRole("button", { name: label })).toBeDisabled();
     }
+
+    await expect(page.getByText("Position opened ✓")).toBeVisible({
+      timeout: 60_000,
+    });
   });
 });
