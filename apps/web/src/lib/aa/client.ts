@@ -38,7 +38,7 @@ type PimlicoGasPriceResponse = {
   };
 };
 
-async function estimateFeesPerGas() {
+export async function estimateFeesPerGas() {
   try {
     const response = await fetch(BUNDLER_RPC_URL, {
       method: "POST",
