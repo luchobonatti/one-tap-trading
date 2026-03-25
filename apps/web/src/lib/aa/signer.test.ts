@@ -14,13 +14,12 @@ describe("buildKernelCallData", () => {
     expect(result).toMatch(/^0x/);
   });
 
-  it("encodes the execute function selector (0x6e31a914 for ERC-7579)", () => {
+  it("encodes the execute(bytes32,bytes) selector 0xe9ae5c53", () => {
     const result = buildKernelCallData(
       "0xe35486669A5D905CF18D4af477Aaac08dF93Eab0",
       "0x5a6c3d4a",
     );
-    expect(result.startsWith("0x")).toBe(true);
-    expect(result.length).toBeGreaterThan(10);
+    expect(result.startsWith("0xe9ae5c53")).toBe(true);
   });
 
   it("encodes the target address in the execution calldata", () => {

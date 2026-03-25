@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Hex } from "viem";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useSessionKey } from "@/hooks/use-session-key";
 
@@ -28,7 +29,8 @@ const mockClear = vi.mocked(clearSessionKey);
 const mockExpiresAt = vi.mocked(sessionExpiresAt);
 
 const MOCK_SESSION = {
-  privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  privateKey:
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex,
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
   validUntil: Math.floor(Date.now() / 1000) + 3600,
 };

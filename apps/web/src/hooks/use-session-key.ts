@@ -35,11 +35,15 @@ export function useSessionKey(isAccountReady: boolean): UseSessionKeyReturn {
     if (!isAccountReady) return;
     if (!hasSessionKey()) {
       setStatus("idle");
+      setExpiresAt(undefined);
+      setError(undefined);
       return;
     }
     const session = loadSessionKey();
     if (session === null) {
       setStatus("idle");
+      setExpiresAt(undefined);
+      setError(undefined);
       return;
     }
     if (isSessionExpired(session)) {
@@ -57,8 +61,14 @@ export function useSessionKey(isAccountReady: boolean): UseSessionKeyReturn {
     try {
       await delegateSessionKey(spendLimitUsdc);
       const session = loadSessionKey();
+      if (session === null) {
+        setError("Session key not found after delegation. Please try again.");
+        setStatus("error");
+        setExpiresAt(undefined);
+        return;
+      }
       setStatus("ready");
-      if (session !== null) setExpiresAt(sessionExpiresAt(session));
+      setExpiresAt(sessionExpiresAt(session));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Session delegation failed",

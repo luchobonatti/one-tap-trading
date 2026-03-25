@@ -45,6 +45,12 @@ export async function generateSessionKey(): Promise<StoredSession> {
 }
 
 export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
+  const trimmed = spendLimitUsdc.trim();
+  const amount = Number(trimmed);
+  if (trimmed === "" || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Spend limit must be a positive number");
+  }
+
   const session = await generateSessionKey();
 
   const callData = encodeFunctionData({
@@ -55,7 +61,7 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
       session.validUntil,
       perpEngineAddress[6343],
       [OPEN_POSITION_SELECTOR, CLOSE_POSITION_SELECTOR],
-      parseUnits(spendLimitUsdc, 6),
+      parseUnits(trimmed, 6),
     ],
   });
 

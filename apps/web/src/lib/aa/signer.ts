@@ -9,9 +9,12 @@ import {
 import type { Address, Hex } from "viem";
 import { createBundlerClient, getUserOperationHash } from "viem/account-abstraction";
 import type { UserOperation } from "viem/account-abstraction";
-import { verifyingPaymasterAddress } from "@one-tap/shared-types";
+import {
+  sessionKeyValidatorAddress,
+  verifyingPaymasterAddress,
+} from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
-import { publicClient } from "@/lib/aa/client";
+import { publicClient, estimateFeesPerGas } from "@/lib/aa/client";
 import type { StoredSession } from "@/lib/aa/session-key";
 
 const BUNDLER_RPC_URL =
@@ -21,9 +24,7 @@ const ENTRY_POINT_ADDRESS =
   (process.env.NEXT_PUBLIC_ENTRY_POINT_ADDRESS ??
     "0x0000000071727De22E5E9d8BAf0edAc6f37da032") as Address;
 
-const SESSION_KEY_VALIDATOR_ADDRESS =
-  (process.env.NEXT_PUBLIC_SESSION_KEY_VALIDATOR_ADDRESS ??
-    "0x672B55126649951AfbbD13d82015691BC8BAD007") as Address;
+const SESSION_KEY_VALIDATOR_ADDRESS = sessionKeyValidatorAddress[6343];
 
 const PAYMASTER_ADDRESS = verifyingPaymasterAddress[6343];
 
@@ -104,7 +105,7 @@ export async function buildUserOp(
     entryPointAddress: ENTRY_POINT_ADDRESS,
   } as Parameters<typeof bundlerClient.estimateUserOperationGas>[0]);
 
-  const fees = await publicClient.estimateFeesPerGas();
+  const fees = await estimateFeesPerGas();
 
   return {
     sender,
@@ -113,8 +114,8 @@ export async function buildUserOp(
     callGasLimit: gas.callGasLimit,
     preVerificationGas: gas.preVerificationGas,
     verificationGasLimit: gas.verificationGasLimit,
-    maxFeePerGas: fees.maxFeePerGas ?? 0n,
-    maxPriorityFeePerGas: fees.maxPriorityFeePerGas ?? 0n,
+    maxFeePerGas: fees.maxFeePerGas,
+    maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
     paymaster: PAYMASTER_ADDRESS,
     paymasterData: "0x" as Hex,
     paymasterVerificationGasLimit:
