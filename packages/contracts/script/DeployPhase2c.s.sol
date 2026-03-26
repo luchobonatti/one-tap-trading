@@ -7,12 +7,13 @@ import { SessionKeyValidator } from "src/SessionKeyValidator.sol";
 import { VerifyingPaymaster } from "src/VerifyingPaymaster.sol";
 
 /// @title DeployPhase2c
-/// @notice Re-deploys SessionKeyValidator and VerifyingPaymaster with:
-///         - VerifyingPaymaster: whitelists ERC-7579 installModule(1, SKV, "") targeting
-///           the sender — required for first-time delegation batches (approve + installModule
-///           + grantSession). Also bumps DEFAULT_GAS_ALLOWANCE to 1 Gwei for MegaETH.
-///         - SessionKeyValidator: re-deployed to pick up post-Phase-2b fixes
-///           (Slither findings + Copilot review).
+/// @notice DEPRECATED — superseded by DeployPhase2d.
+///         Kept for historical reference only; do not re-run.
+///
+///         Phase 2c whitelisted ERC-7579 installModule(1, SKV, "") in VerifyingPaymaster.
+///         Phase 2d replaced that with installValidations(bytes21[],...) because
+///         Kernel v3.1 uses installValidations for validator registration — installModule
+///         reverts silently for validator type on this kernel version.
 ///
 ///         Required env vars:
 ///           MEGAETH_RPC_URL        — RPC endpoint

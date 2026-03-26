@@ -126,8 +126,7 @@ contract SessionKeyValidator is ISessionKeyValidator {
         // Doing this first prevents a griefing attack where an attacker passes the correct
         // sessionKey address but an invalid ECDSA signature, incrementing spentAmount and
         // locking the session without ever being authorised.
-        bytes memory ecdsaSig = _sliceBytes(bytes(signature), 21, 86);
-        if (!_verifyEcdsa(userOpHash, ecdsaSig, extractedSessionKey)) {
+        if (!_verifyEcdsa(userOpHash, signature[21:86], extractedSessionKey)) {
             return VALIDATION_FAILED;
         }
 

@@ -760,6 +760,30 @@ contract VerifyingPaymasterTest is Test {
         paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
     }
 
+    function test_ValidatePaymasterUserOp_InstallModule_Reverts() public {
+        // Regression: ERC-7579 installModule(uint256,address,bytes) must be rejected.
+        // Kernel v3.1 uses installValidations — accepting installModule would allow
+        // an attacker to sponsor arbitrary module installations.
+        bytes4 installModuleSelector = bytes4(keccak256("installModule(uint256,address,bytes)"));
+        bytes memory badCallData = abi.encodeWithSelector(
+            installModuleSelector, uint256(1), sessionKeyValidator, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), badCallData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVerifyingPaymaster.SelectorNotAllowed.selector, installModuleSelector
+            )
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
+
     function test_ValidatePaymasterUserOp_BatchDelegation_WithInstallValidations_Succeeds() public {
         PackedUserOperation memory userOp = _createFullDelegationBatchUserOp();
         bytes32 userOpHash = keccak256(abi.encode(userOp));

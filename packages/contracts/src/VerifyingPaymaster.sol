@@ -304,13 +304,19 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
             if (selector != INSTALL_VALIDATIONS_SELECTOR) revert SelectorNotAllowed(selector);
             if (callData.length < 196) revert SelectorNotAllowed(selector);
 
+            uint256 vIdsOffset;
             uint256 vIdsLength;
             bytes32 vIdSlot;
             assembly {
                 let base := add(callData, 0x20)
+                vIdsOffset := mload(add(base, 4))
                 vIdsLength := mload(add(base, 132))
                 vIdSlot := mload(add(base, 164))
             }
+            // Enforce canonical ABI layout: vIds offset must be 128 (4 head params × 32 bytes).
+            // A non-standard offset lets an attacker craft calldata where this gate reads a
+            // benign vId while Kernel's abi.decode follows a different offset to another array.
+            if (vIdsOffset != 128) revert SelectorNotAllowed(selector);
             if (vIdsLength != 1) revert SelectorNotAllowed(selector);
 
             // bytes21 is left-aligned: byte[0]=type, bytes[1..20]=address, bytes[21..31]=zeros.
