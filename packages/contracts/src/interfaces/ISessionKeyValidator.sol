@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
+
 /// @title ISessionKeyValidator
 /// @notice Interface for session key validation in One Tap Trading.
 ///         Enforces ephemeral key permissions for PerpEngine operations.
@@ -101,7 +103,9 @@ interface ISessionKeyValidator {
     /// @dev NEVER reverts. Returns 0 (success) or 1 (failure).
     /// @dev Extracts sessionKey from userOp.signature[0:20].
     /// @dev Verifies ECDSA signature, session validity, target, selector, and spend limits.
-    function validateUserOp(bytes calldata userOp, bytes32 userOpHash) external returns (uint256);
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash)
+        external
+        returns (uint256);
 
     /// @notice Validate a signature for offchain use (ERC-1271 style).
     /// @param sender The account that owns the session.
