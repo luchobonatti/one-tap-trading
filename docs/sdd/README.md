@@ -1,6 +1,6 @@
 # Spec-Driven Development (SDD) Artifacts
 
-This directory contains all SDD artifacts for the One Tap Trading project.
+This directory contains file-based SDD artifacts. The primary artifact store is **engram** — a persistent memory layer built into the agent toolchain. To query it, ask the agent: `search engram for sdd/phase3-game-interface` or any `sdd/{change-name}/{artifact-type}` key. File artifacts here are kept for changes that predate engram or were explicitly exported.
 
 Each change gets its own subdirectory with the following artifacts:
 
@@ -14,10 +14,16 @@ Each change gets its own subdirectory with the following artifacts:
 
 ## Active Changes
 
-- [`monorepo-foundation/`](./monorepo-foundation/) — Monorepo setup with Turborepo, Next.js, Rust Axum, Foundry, shared types, CI
+- [`monorepo-foundation/`](./monorepo-foundation/) — Monorepo setup: Turborepo, Next.js, Rust Axum, Foundry, shared types, CI ✅ complete
+- `phase3-game-interface/` — Space-themed PixiJS game canvas (engram only) 🔄 in progress
+
+## Completed Changes (engram)
+
+- `phase2-aa` — Account abstraction: passkeys, session keys, VerifyingPaymaster ✅
+- `phase2d-contracts` — SKV + paymaster redeploy with installValidations whitelist ✅
 
 ## SDD Config
 
-- **Artifact store**: engram + openspec (dual mode)
+- **Artifact store**: engram (primary) — search `sdd/{change-name}/{artifact-type}`
 - **Naming**: `sdd/{change-name}/{artifact-type}`
 - **Project**: one-tap-trading
