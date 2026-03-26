@@ -47,6 +47,10 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     bytes4 private constant GRANT_SESSION_SELECTOR =
         bytes4(keccak256("grantSession(address,uint48,address,bytes4[],uint256)"));
 
+    /// @notice Selector for ERC-7579 installModule(uint256,address,bytes).
+    bytes4 private constant INSTALL_MODULE_SELECTOR =
+        bytes4(keccak256("installModule(uint256,address,bytes)"));
+
     /// @notice Default gas allowance per UserOperation (1 Gwei — covers MegaETH testnet gas,
     ///         which runs ~30× higher than mainnet; observed delegation maxCost ~407 M wei).
     uint256 private constant DEFAULT_GAS_ALLOWANCE = 1_000_000_000;
@@ -124,12 +128,12 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
                 // execCalldata = abi.encodePacked(address target, uint256 value, bytes innerCallData)
                 // Layout: [0:20] target, [20:52] value, [52+] innerCallData
                 (address target, bytes memory innerCallData) = _extractSingleCall(execCalldata);
-                _requireAllowedCall(target, innerCallData);
+                _requireAllowedCall(target, innerCallData, userOp.sender);
             } else if (callType == CALLTYPE_BATCH) {
                 // execCalldata = abi.encode(Execution[]) where Execution = {target, value, callData}
                 Execution[] memory execs = abi.decode(execCalldata, (Execution[]));
                 for (uint256 i = 0; i < execs.length; ++i) {
-                    _requireAllowedCall(execs[i].target, execs[i].callData);
+                    _requireAllowedCall(execs[i].target, execs[i].callData, userOp.sender);
                 }
             } else {
                 revert SelectorNotAllowed(outerSelector);
@@ -240,9 +244,14 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     /// @dev Revert if a call is not in the allowed whitelist.
     ///      Validates both (target, selector) and critical call arguments:
+    ///      - PerpEngine: openPosition / closePosition
     ///      - MockUSDC.approve: spender must be allowedTarget (PerpEngine)
     ///      - SessionKeyValidator.grantSession: targetContract must be allowedTarget (PerpEngine)
-    function _requireAllowedCall(address target, bytes memory callData) internal view {
+    ///      - sender.installModule: moduleTypeId must be 1 (validator), module must be sessionKeyValidator
+    function _requireAllowedCall(address target, bytes memory callData, address sender)
+        internal
+        view
+    {
         if (callData.length < 4) revert SelectorNotAllowed(bytes4(0));
         bytes4 selector;
         assembly {
@@ -279,6 +288,21 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
                 )
             }
             if (grantTarget != allowedTarget) revert TargetNotAllowed(grantTarget);
+        } else if (target == sender) {
+            // Allow a smart account to install only the SessionKeyValidator module on itself.
+            // installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+            // ABI layout: selector(4) + moduleTypeId(32) + module(32) + initData-offset(32) = 100 min.
+            if (selector != INSTALL_MODULE_SELECTOR) revert SelectorNotAllowed(selector);
+            if (callData.length < 100) revert SelectorNotAllowed(selector);
+            uint256 moduleTypeId;
+            address module;
+            assembly {
+                let base := add(callData, 0x20)
+                moduleTypeId := mload(add(base, 4))
+                module := and(mload(add(base, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
+            }
+            if (moduleTypeId != 1) revert SelectorNotAllowed(selector); // 1 = MODULE_TYPE_VALIDATOR
+            if (module != sessionKeyValidator) revert TargetNotAllowed(module);
         } else {
             revert TargetNotAllowed(target);
         }

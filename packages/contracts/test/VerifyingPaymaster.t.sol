@@ -29,6 +29,8 @@ contract VerifyingPaymasterTest is Test {
     bytes4 internal constant APPROVE_SELECTOR = bytes4(keccak256("approve(address,uint256)"));
     bytes4 internal constant GRANT_SESSION_SELECTOR =
         bytes4(keccak256("grantSession(address,uint48,address,bytes4[],uint256)"));
+    bytes4 internal constant INSTALL_MODULE_SELECTOR =
+        bytes4(keccak256("installModule(uint256,address,bytes)"));
 
     function setUp() public {
         (owner, ownerKey) = makeAddrAndKey("owner");
@@ -554,6 +556,63 @@ contract VerifyingPaymasterTest is Test {
         assertEq(paymaster.gasAllowancePerOp(), newAllowance);
     }
 
+    /// @dev Fuzz the installModule authorization gate.
+    ///      The paymaster uses manual calldata parsing (assembly) in _requireAllowedCall —
+    ///      this test proves only (target==sender, moduleTypeId==1, module==SKV) passes.
+    function test_fuzz_ValidatePaymasterUserOp_InstallModule(
+        address fuzzTarget,
+        uint256 fuzzModuleTypeId,
+        address fuzzModule
+    ) public {
+        vm.assume(fuzzTarget != address(0));
+        vm.assume(fuzzModule != address(0));
+
+        bytes memory installData = abi.encodeWithSelector(
+            INSTALL_MODULE_SELECTOR, fuzzModuleTypeId, fuzzModule, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(fuzzTarget, uint256(0), installData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        bool isExactShape =
+            fuzzTarget == user && fuzzModuleTypeId == 1 && fuzzModule == sessionKeyValidator;
+
+        vm.prank(entryPoint);
+
+        if (isExactShape) {
+            (, uint256 validationData) =
+                paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+            assertEq(validationData, 0);
+        } else if (fuzzTarget != user) {
+            // Wrong target: fuzzTarget is not allowedTarget / mockUsdc / sessionKeyValidator / sender.
+            // Skip if it accidentally matches one of the whitelisted targets.
+            vm.assume(
+                fuzzTarget != perpEngine && fuzzTarget != mockUsdc
+                    && fuzzTarget != sessionKeyValidator
+            );
+            vm.expectRevert(
+                abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, fuzzTarget)
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        } else if (fuzzModuleTypeId != 1) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IVerifyingPaymaster.SelectorNotAllowed.selector, INSTALL_MODULE_SELECTOR
+                )
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        } else {
+            // fuzzTarget == user, fuzzModuleTypeId == 1, fuzzModule != sessionKeyValidator
+            vm.expectRevert(
+                abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, fuzzModule)
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        }
+    }
+
     // ─── Helper functions ─────────────────────────────────────────────────────
 
     /// @dev Build an ERC-7579 single-call execute callData targeting `target` with `innerData`.
@@ -647,6 +706,80 @@ contract VerifyingPaymasterTest is Test {
         return userOp;
     }
 
+    // ─── validatePaymasterUserOp — installModule whitelist ────────────────────
+
+    function test_ValidatePaymasterUserOp_InstallModule_ValidSKV_Succeeds() public {
+        // installModule(1, sessionKeyValidator, "") targeting sender — must pass.
+        bytes memory installData = abi.encodeWithSelector(
+            INSTALL_MODULE_SELECTOR, uint256(1), sessionKeyValidator, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), installData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        (, uint256 validationData) =
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        assertEq(validationData, 0);
+    }
+
+    function test_ValidatePaymasterUserOp_InstallModule_WrongModuleType_Reverts() public {
+        // moduleTypeId = 2 (executor) instead of 1 (validator) — must revert.
+        bytes memory installData = abi.encodeWithSelector(
+            INSTALL_MODULE_SELECTOR, uint256(2), sessionKeyValidator, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), installData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVerifyingPaymaster.SelectorNotAllowed.selector, INSTALL_MODULE_SELECTOR
+            )
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
+
+    function test_ValidatePaymasterUserOp_InstallModule_WrongModule_Reverts() public {
+        // Installing an arbitrary module (not SKV) — must revert.
+        address badModule = makeAddr("badModule");
+        bytes memory installData =
+            abi.encodeWithSelector(INSTALL_MODULE_SELECTOR, uint256(1), badModule, bytes(""));
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), installData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, badModule)
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
+
+    function test_ValidatePaymasterUserOp_BatchDelegation_WithInstallModule_Succeeds() public {
+        // Full 3-call delegation: approve + installModule(SKV) + grantSession — must pass.
+        PackedUserOperation memory userOp = _createFullDelegationBatchUserOp();
+        bytes32 userOpHash = keccak256(abi.encode(userOp));
+
+        vm.prank(entryPoint);
+        (bytes memory context, uint256 validationData) =
+            paymaster.validatePaymasterUserOp(userOp, userOpHash, 100_000);
+
+        (address contextSender,) = abi.decode(context, (address, uint256));
+        assertEq(contextSender, user);
+        assertEq(validationData, 0);
+    }
+
     /// @dev Batch UserOp with approve(perpEngine) + grantSession — the delegation flow.
     function _createDelegationBatchUserOp() internal returns (PackedUserOperation memory) {
         bytes4[] memory sels = new bytes4[](2);
@@ -673,6 +806,49 @@ contract VerifyingPaymasterTest is Test {
         });
 
         // Batch mode: first byte of mode = 0x01
+        bytes32 batchMode = bytes32(uint256(1) << 248);
+        bytes memory execCalldata = abi.encode(execs);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, batchMode, execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+        return userOp;
+    }
+
+    /// @dev Full 3-call delegation batch: approve + installModule(SKV) + grantSession.
+    ///      This mirrors what the frontend sends for a first-time delegation.
+    function _createFullDelegationBatchUserOp() internal returns (PackedUserOperation memory) {
+        bytes4[] memory sels = new bytes4[](2);
+        sels[0] = OPEN_POSITION_SELECTOR;
+        sels[1] = CLOSE_POSITION_SELECTOR;
+
+        VerifyingPaymaster.Execution[] memory execs = new VerifyingPaymaster.Execution[](3);
+        execs[0] = VerifyingPaymaster.Execution({
+            target: mockUsdc,
+            value: 0,
+            callData: abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max)
+        });
+        execs[1] = VerifyingPaymaster.Execution({
+            target: user, // sender installs module on itself
+            value: 0,
+            callData: abi.encodeWithSelector(
+                INSTALL_MODULE_SELECTOR, uint256(1), sessionKeyValidator, bytes("")
+            )
+        });
+        execs[2] = VerifyingPaymaster.Execution({
+            target: sessionKeyValidator,
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GRANT_SESSION_SELECTOR,
+                makeAddr("sessionKey"),
+                uint48(block.timestamp + 4 hours),
+                perpEngine,
+                sels,
+                uint256(10_000e6)
+            )
+        });
+
         bytes32 batchMode = bytes32(uint256(1) << 248);
         bytes memory execCalldata = abi.encode(execs);
         bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, batchMode, execCalldata);
