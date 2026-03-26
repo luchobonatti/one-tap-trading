@@ -12,17 +12,52 @@ import {
 import { getSmartAccountClient } from "@/lib/aa/account";
 import { publicClient } from "@/lib/aa/client";
 
-const INSTALL_MODULE_ABI = [
+const GET_SESSION_ABI = [
   {
-    name: "installModule",
+    name: "getSession",
+    type: "function",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "sessionKey", type: "address" },
+          { name: "validUntil", type: "uint48" },
+          { name: "targetContract", type: "address" },
+          { name: "allowedSelectors", type: "bytes4[]" },
+          { name: "spendLimit", type: "uint256" },
+          { name: "spentAmount", type: "uint256" },
+          { name: "active", type: "bool" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+] as const;
+
+// Kernel v3.1 installs validators via installValidations, NOT installModule.
+// installModule(1, addr, bytes) reverts silently on Kernel v3.1 for validator type.
+// vId format: bytes21 = bytes1(VALIDATOR_TYPE.SECONDARY=0x01) || address(module)
+const INSTALL_VALIDATIONS_ABI = [
+  {
+    name: "installValidations",
     type: "function",
     inputs: [
-      { name: "moduleTypeId", type: "uint256" },
-      { name: "module", type: "address" },
-      { name: "initData", type: "bytes" },
+      { name: "vIds", type: "bytes21[]" },
+      {
+        name: "configs",
+        type: "tuple[]",
+        components: [
+          { name: "nonce", type: "uint32" },
+          { name: "hook", type: "address" },
+        ],
+      },
+      { name: "validationData", type: "bytes[]" },
+      { name: "hookData", type: "bytes[]" },
     ],
     outputs: [],
-    stateMutability: "payable",
+    stateMutability: "nonpayable",
   },
 ] as const;
 
@@ -40,7 +75,10 @@ const IS_MODULE_INSTALLED_ABI = [
   },
 ] as const;
 
-const STORAGE_KEY = "ott-session-key-v1";
+// Bump the version whenever the stored shape changes so old entries are
+// automatically discarded on load.  This also invalidates any session that was
+// delegated against a now-redeployed SessionKeyValidator.
+const STORAGE_KEY = "ott-session-key-v2";
 const VALID_DURATION_SECONDS = 4 * 3600;
 
 // Correct selectors derived from keccak256 of full function signatures.
@@ -53,6 +91,7 @@ export type StoredSession = {
   privateKey: Hex;
   address: Address;
   validUntil: number;
+  validatorAddress: Address;
 };
 
 function uint8ArrayToHex(arr: Uint8Array): Hex {
@@ -72,6 +111,7 @@ export async function generateSessionKey(): Promise<StoredSession> {
     privateKey,
     address: account.address,
     validUntil,
+    validatorAddress: sessionKeyValidatorAddress[6343],
   };
 
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
@@ -121,10 +161,38 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
     });
   }
 
-  const installModuleCallData = encodeFunctionData({
-    abi: INSTALL_MODULE_ABI,
-    functionName: "installModule",
-    args: [1n, sessionKeyValidatorAddress[6343], "0x"],
+  let sessionAlreadyActive = false;
+  if (accountDeployed) {
+    try {
+      const existing = await publicClient.readContract({
+        address: sessionKeyValidatorAddress[6343],
+        abi: GET_SESSION_ABI,
+        functionName: "getSession",
+        args: [smartAccountAddress],
+      });
+      sessionAlreadyActive = existing.active;
+    } catch {
+      sessionAlreadyActive = false;
+    }
+  }
+
+  const revokeCallData = encodeFunctionData({
+    abi: sessionKeyValidatorAbi,
+    functionName: "revokeSession",
+    args: [],
+  });
+
+  // vId = 0x01 (SECONDARY type) + 20-byte address = 21 bytes
+  const vId = `0x01${sessionKeyValidatorAddress[6343].slice(2)}` as `0x${string}`;
+  const installValidationsCallData = encodeFunctionData({
+    abi: INSTALL_VALIDATIONS_ABI,
+    functionName: "installValidations",
+    args: [
+      [vId],
+      [{ nonce: 1, hook: "0x0000000000000000000000000000000000000000" }],
+      ["0x"],
+      ["0x"],
+    ],
   });
 
   const calls = [
@@ -138,10 +206,19 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
       : [
           {
             to: smartAccountAddress,
-            data: installModuleCallData,
+            data: installValidationsCallData,
             value: 0n,
           },
         ]),
+    ...(sessionAlreadyActive
+      ? [
+          {
+            to: sessionKeyValidatorAddress[6343],
+            data: revokeCallData,
+            value: 0n,
+          },
+        ]
+      : []),
     {
       to: sessionKeyValidatorAddress[6343],
       data: grantCallData,
@@ -160,14 +237,23 @@ export function loadSessionKey(): StoredSession | null {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (raw === null) return null;
   try {
-    return JSON.parse(raw) as StoredSession;
+    const session = JSON.parse(raw) as StoredSession;
+    if (
+      session.validatorAddress?.toLowerCase() !==
+      sessionKeyValidatorAddress[6343].toLowerCase()
+    ) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return session;
   } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
     return null;
   }
 }
 
 export function hasSessionKey(): boolean {
-  return sessionStorage.getItem(STORAGE_KEY) !== null;
+  return loadSessionKey() !== null;
 }
 
 export function isSessionExpired(session: StoredSession): boolean {

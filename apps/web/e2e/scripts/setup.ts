@@ -86,11 +86,16 @@ async function fundWithUsdc(accountAddress: `0x${string}`): Promise<void> {
   const usdcAddress = mockUsdcAddress[6343];
   console.log(`  Minting 100 USDC to ${accountAddress}…`);
 
+  const nonce = await publicClient.getTransactionCount({
+    address: deployer.address,
+    blockTag: "pending",
+  });
   const hash = await walletClient.writeContract({
     address: usdcAddress,
     abi: MOCK_USDC_ABI,
     functionName: "mint",
     args: [accountAddress, USDC_MINT_AMOUNT],
+    nonce,
   });
 
   await publicClient.waitForTransactionReceipt({ hash });
@@ -144,8 +149,32 @@ async function run(): Promise<void> {
   await fundWithUsdc(accountAddress as `0x${string}`);
 
   console.log("\n⏳ Delegating session key…");
+
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", (err) => consoleErrors.push(`PAGE ERROR: ${err.message}`));
+
   await page.getByRole("button", { name: "Enable Trading" }).click();
-  await page.waitForSelector('button[aria-label="LONG 2×"]', { timeout: 60_000 });
+
+  try {
+    await page.waitForSelector('button[aria-label="LONG 2×"]', { timeout: 60_000 });
+  } catch {
+    const screenshot = resolve(__dirname, "../delegation-error.png");
+    await page.screenshot({ path: screenshot, fullPage: true });
+    console.error("\n❌ Delegation timed out. Screenshot saved to e2e/delegation-error.png");
+
+    if (consoleErrors.length > 0) {
+      console.error("\nBrowser console errors:");
+      for (const e of consoleErrors) console.error(" •", e);
+    }
+
+    const visible = await page.evaluate(() => document.body.innerText.slice(0, 2000));
+    console.error("\nVisible page text:\n", visible);
+    throw new Error("Delegation timeout — see logs above for browser errors");
+  }
+
   console.log("✅ Session key delegated");
 
   const sessionKeyRaw = await page.evaluate(

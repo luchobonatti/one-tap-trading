@@ -33,6 +33,7 @@ const MOCK_SESSION = {
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex,
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
   validUntil: Math.floor(Date.now() / 1000) + 3600,
+  validatorAddress: "0xD06fbb9f82e9EC3957a9D57E61f3fb5966a6195e" as `0x${string}`,
 };
 
 beforeEach(() => {
