@@ -9,10 +9,7 @@ import {
 import type { Address, Hex } from "viem";
 import { createBundlerClient, getUserOperationHash } from "viem/account-abstraction";
 import type { UserOperation } from "viem/account-abstraction";
-import {
-  sessionKeyValidatorAddress,
-  verifyingPaymasterAddress,
-} from "@one-tap/shared-types";
+import { verifyingPaymasterAddress } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient, estimateFeesPerGas } from "@/lib/aa/client";
 import type { StoredSession } from "@/lib/aa/session-key";
@@ -23,8 +20,6 @@ const BUNDLER_RPC_URL =
 const ENTRY_POINT_ADDRESS =
   (process.env.NEXT_PUBLIC_ENTRY_POINT_ADDRESS ??
     "0x0000000071727De22E5E9d8BAf0edAc6f37da032") as Address;
-
-const SESSION_KEY_VALIDATOR_ADDRESS = sessionKeyValidatorAddress[6343];
 
 const PAYMASTER_ADDRESS = verifyingPaymasterAddress[6343];
 
@@ -77,9 +72,11 @@ export async function buildUserOp(
   session: StoredSession,
 ): Promise<UserOperation<"0.7">> {
   // Kernel v3.1 nonce key: validatorMode(0x00) + validatorType(0x01=SECONDARY)
-  // + validatorAddress(20B) + customKey(0x0000) = 24 bytes total
+  // + validatorAddress(20B) + customKey(0x0000) = 24 bytes total.
+  // Derived from the session's own validatorAddress so nonce key always matches
+  // the validator that was actually installed during delegation.
   const nonceKey = BigInt(
-    `0x0001${SESSION_KEY_VALIDATOR_ADDRESS.slice(2)}0000`,
+    `0x0001${session.validatorAddress.slice(2)}0000`,
   );
 
   const nonce = await publicClient.readContract({
@@ -95,8 +92,6 @@ export async function buildUserOp(
   // estimation. Fixed limits are safe here: MegaETH block gas cap is 2 billion; observed
   // delegation (more complex than a trade) used verificationGasLimit=6.5M, callGasLimit=2.6M.
   const fees = await estimateFeesPerGas();
-
-  void session; // session arg kept for API consistency; used by caller for signUserOp
 
   return {
     sender,

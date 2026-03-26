@@ -27,6 +27,7 @@ vi.mock("@/lib/aa/session-key", () => ({
 
 import { publicClient } from "@/lib/aa/client";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
+import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
 
 const mockReadContract = vi.mocked(publicClient.readContract);
 const mockGetBlock = vi.mocked(publicClient.getBlock);
@@ -39,7 +40,7 @@ const MOCK_SESSION = {
   privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as `0x${string}`,
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
   validUntil: Math.floor(Date.now() / 1000) + 3600,
-  validatorAddress: "0xD06fbb9f82e9EC3957a9D57E61f3fb5966a6195e" as `0x${string}`,
+  validatorAddress: sessionKeyValidatorAddress[6343],
 };
 
 beforeEach(() => {

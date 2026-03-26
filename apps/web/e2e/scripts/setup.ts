@@ -178,7 +178,7 @@ async function run(): Promise<void> {
   console.log("✅ Session key delegated");
 
   const sessionKeyRaw = await page.evaluate(
-    () => sessionStorage.getItem("ott-session-key-v1") ?? "{}",
+    () => sessionStorage.getItem("ott-session-key-v2") ?? "{}",
   );
 
   await browser.close();
