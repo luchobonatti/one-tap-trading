@@ -7,12 +7,17 @@ import {
   sessionExpiresAt,
 } from "@/lib/aa/session-key";
 import type { StoredSession } from "@/lib/aa/session-key";
+import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
+
+const STORAGE_KEY = "ott-session-key-v2";
+const VALIDATOR_ADDR = sessionKeyValidatorAddress[6343];
 
 const MOCK_SESSION: StoredSession = {
   privateKey:
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   validUntil: Math.floor(Date.now() / 1000) + 3600,
+  validatorAddress: VALIDATOR_ADDR,
 };
 
 const EXPIRED_SESSION: StoredSession = {
@@ -31,7 +36,7 @@ describe("session key storage", () => {
   });
 
   it("hasSessionKey returns true after storing", () => {
-    sessionStorage.setItem("ott-session-key-v1", JSON.stringify(MOCK_SESSION));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_SESSION));
     expect(hasSessionKey()).toBe(true);
   });
 
@@ -40,20 +45,30 @@ describe("session key storage", () => {
   });
 
   it("loadSessionKey returns stored session", () => {
-    sessionStorage.setItem("ott-session-key-v1", JSON.stringify(MOCK_SESSION));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_SESSION));
     const loaded = loadSessionKey();
     expect(loaded).not.toBeNull();
     expect(loaded?.address).toBe(MOCK_SESSION.address);
     expect(loaded?.validUntil).toBe(MOCK_SESSION.validUntil);
   });
 
+  it("loadSessionKey returns null and clears stale session with wrong validator", () => {
+    const stale: StoredSession = {
+      ...MOCK_SESSION,
+      validatorAddress: "0x0000000000000000000000000000000000000001",
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stale));
+    expect(loadSessionKey()).toBeNull();
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
   it("loadSessionKey returns null on corrupted data", () => {
-    sessionStorage.setItem("ott-session-key-v1", "{invalid json{{");
+    sessionStorage.setItem(STORAGE_KEY, "{invalid json{{");
     expect(loadSessionKey()).toBeNull();
   });
 
   it("clearSessionKey removes the stored session", () => {
-    sessionStorage.setItem("ott-session-key-v1", JSON.stringify(MOCK_SESSION));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_SESSION));
     clearSessionKey();
     expect(hasSessionKey()).toBe(false);
     expect(loadSessionKey()).toBeNull();

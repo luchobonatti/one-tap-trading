@@ -9,10 +9,7 @@ import {
 import type { Address, Hex } from "viem";
 import { createBundlerClient, getUserOperationHash } from "viem/account-abstraction";
 import type { UserOperation } from "viem/account-abstraction";
-import {
-  sessionKeyValidatorAddress,
-  verifyingPaymasterAddress,
-} from "@one-tap/shared-types";
+import { verifyingPaymasterAddress } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient, estimateFeesPerGas } from "@/lib/aa/client";
 import type { StoredSession } from "@/lib/aa/session-key";
@@ -23,8 +20,6 @@ const BUNDLER_RPC_URL =
 const ENTRY_POINT_ADDRESS =
   (process.env.NEXT_PUBLIC_ENTRY_POINT_ADDRESS ??
     "0x0000000071727De22E5E9d8BAf0edAc6f37da032") as Address;
-
-const SESSION_KEY_VALIDATOR_ADDRESS = sessionKeyValidatorAddress[6343];
 
 const PAYMASTER_ADDRESS = verifyingPaymasterAddress[6343];
 
@@ -74,8 +69,15 @@ export function buildKernelCallData(target: Address, innerCallData: Hex): Hex {
 export async function buildUserOp(
   sender: Address,
   callData: Hex,
+  session: StoredSession,
 ): Promise<UserOperation<"0.7">> {
-  const nonceKey = BigInt(SESSION_KEY_VALIDATOR_ADDRESS);
+  // Kernel v3.1 nonce key: validatorMode(0x00) + validatorType(0x01=SECONDARY)
+  // + validatorAddress(20B) + customKey(0x0000) = 24 bytes total.
+  // Derived from the session's own validatorAddress so nonce key always matches
+  // the validator that was actually installed during delegation.
+  const nonceKey = BigInt(
+    `0x0001${session.validatorAddress.slice(2)}0000`,
+  );
 
   const nonce = await publicClient.readContract({
     address: ENTRY_POINT_ADDRESS,
@@ -84,43 +86,26 @@ export async function buildUserOp(
     args: [sender, nonceKey],
   });
 
-  const bundlerClient = createBundlerClient({
-    transport: http(BUNDLER_RPC_URL),
-    chain: megaEthCarrot,
-  });
-
-  const stubOp = {
-    sender,
-    nonce,
-    callData,
-    signature: STUB_SESSION_SIGNATURE,
-    paymaster: PAYMASTER_ADDRESS,
-    paymasterData: "0x" as Hex,
-    paymasterVerificationGasLimit: 300_000n,
-    paymasterPostOpGasLimit: 50_000n,
-  } satisfies Partial<UserOperation<"0.7">>;
-
-  const gas = await bundlerClient.estimateUserOperationGas({
-    ...stubOp,
-    entryPointAddress: ENTRY_POINT_ADDRESS,
-  } as Parameters<typeof bundlerClient.estimateUserOperationGas>[0]);
-
+  // Gas estimation via eth_estimateUserOperationGas fails for our SessionKeyValidator because
+  // the bundler simulation calls validateUserOp with a stub hash that doesn't match any stored
+  // signature. The SKV returns VALIDATION_FAILED, which Alto reports as AA23 and aborts
+  // estimation. Fixed limits are safe here: MegaETH block gas cap is 2 billion; observed
+  // delegation (more complex than a trade) used verificationGasLimit=6.5M, callGasLimit=2.6M.
   const fees = await estimateFeesPerGas();
 
   return {
     sender,
     nonce,
     callData,
-    callGasLimit: gas.callGasLimit,
-    preVerificationGas: gas.preVerificationGas,
-    verificationGasLimit: gas.verificationGasLimit,
+    callGasLimit: 3_000_000n,
+    preVerificationGas: 600_000n,
+    verificationGasLimit: 6_500_000n,
     maxFeePerGas: fees.maxFeePerGas,
     maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
     paymaster: PAYMASTER_ADDRESS,
     paymasterData: "0x" as Hex,
-    paymasterVerificationGasLimit:
-      gas.paymasterVerificationGasLimit ?? 300_000n,
-    paymasterPostOpGasLimit: gas.paymasterPostOpGasLimit ?? 50_000n,
+    paymasterVerificationGasLimit: 320_000n,
+    paymasterPostOpGasLimit: 66_000n,
     signature: STUB_SESSION_SIGNATURE,
   };
 }
@@ -143,7 +128,8 @@ export async function signUserOp(
     message: { raw: userOpHash },
   });
 
-  const signature = concat([session.address, ecdsaSig]) as Hex;
+  // Kernel v3 signature format: validatorMode(0x00=DEFAULT) + validatorAddress + ecdsaSig
+  const signature = concat(["0x00", session.address, ecdsaSig]) as Hex;
   return { ...userOp, signature };
 }
 

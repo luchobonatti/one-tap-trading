@@ -84,7 +84,7 @@ export async function openTrade(params: OpenTradeParams): Promise<Hex> {
   });
   const kernelCallData = buildKernelCallData(PERP_ENGINE, innerCallData);
 
-  const userOp = await buildUserOp(params.accountAddress, kernelCallData);
+  const userOp = await buildUserOp(params.accountAddress, kernelCallData, session);
   const signedOp = await signUserOp(userOp, session);
   return submitUserOp(signedOp);
 }
@@ -100,7 +100,7 @@ export async function closeTrade(params: CloseTradeParams): Promise<Hex> {
   });
   const kernelCallData = buildKernelCallData(PERP_ENGINE, innerCallData);
 
-  const userOp = await buildUserOp(params.accountAddress, kernelCallData);
+  const userOp = await buildUserOp(params.accountAddress, kernelCallData, session);
   const signedOp = await signUserOp(userOp, session);
   return submitUserOp(signedOp);
 }
