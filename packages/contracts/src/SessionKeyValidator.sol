@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { ISessionKeyValidator } from "./interfaces/ISessionKeyValidator.sol";
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
 
 /// @title SessionKeyValidator
 /// @notice ERC-7579 validator module for session key authorization in One Tap Trading.
@@ -92,22 +93,27 @@ contract SessionKeyValidator is ISessionKeyValidator {
     // ─── ERC-7579 Validator Interface ─────────────────────────────────────────
 
     /// @inheritdoc ISessionKeyValidator
-    function validateUserOp(bytes calldata userOp, bytes32 userOpHash) external returns (uint256) {
-        // Minimum ABI-encoded size: 9 fields × 32 bytes inline + 4 dynamic length words
-        if (userOp.length < 416) return VALIDATION_FAILED;
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash)
+        external
+        returns (uint256)
+    {
+        bytes calldata signature = userOp.signature;
 
-        (address sender, bytes memory rawCallData, bytes memory signature) = _decodeUserOp(userOp);
+        // Kernel v3 passes the full signature including the 1-byte mode prefix (e.g. 0x00 for
+        // DEFAULT). Strip the mode byte: actual session signature starts at offset 1.
+        // Format: mode(1B) + sessionKeyAddress(20B) + ecdsaSig(65B) = 86 bytes minimum.
+        if (signature.length < 86) return VALIDATION_FAILED;
 
-        if (signature.length < 85) return VALIDATION_FAILED;
-        address extractedSessionKey = address(bytes20(_sliceBytes(signature, 0, 20)));
+        address extractedSessionKey = address(bytes20(signature[1:21]));
 
+        address sender = userOp.sender;
         SessionData storage session = sessions[sender];
         if (session.sessionKey != extractedSessionKey) return VALIDATION_FAILED;
         if (!session.active) return VALIDATION_FAILED;
         if (block.timestamp > session.validUntil) return VALIDATION_FAILED;
 
         // Unwrap ERC-7579 execute and validate call — extracted to avoid stack-too-deep.
-        (address callTarget, bytes memory innerCallData) = _unwrapExecuteCall(rawCallData);
+        (address callTarget, bytes memory innerCallData) = _unwrapExecuteCall(userOp.callData);
         if (innerCallData.length < 4) return VALIDATION_FAILED;
         if (callTarget != session.targetContract) return VALIDATION_FAILED;
 
@@ -118,9 +124,9 @@ contract SessionKeyValidator is ISessionKeyValidator {
 
         // Verify ECDSA signature before mutating state.
         // Doing this first prevents a griefing attack where an attacker passes the correct
-        // sessionKey address (first 20 bytes of signature) but an invalid ECDSA signature,
-        // incrementing spentAmount and locking the session without ever being authorised.
-        if (!_verifyEcdsa(userOpHash, _sliceBytes(signature, 20, 85), extractedSessionKey)) {
+        // sessionKey address but an invalid ECDSA signature, incrementing spentAmount and
+        // locking the session without ever being authorised.
+        if (!_verifyEcdsa(userOpHash, signature[21:86], extractedSessionKey)) {
             return VALIDATION_FAILED;
         }
 
@@ -183,18 +189,6 @@ contract SessionKeyValidator is ISessionKeyValidator {
     {
         bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(msgHash);
         return ECDSA.recover(ethHash, sig) == expectedSigner;
-    }
-
-    /// @notice Decodes the relevant fields from an ABI-encoded PackedUserOperation.
-    /// @dev Internal — called only after a minimum-length guard in validateUserOp.
-    function _decodeUserOp(bytes calldata userOp)
-        internal
-        pure
-        returns (address sender, bytes memory callData, bytes memory signature)
-    {
-        (sender,,, callData,,,,, signature) = abi.decode(
-            userOp, (address, uint256, bytes, bytes, bytes32, uint256, bytes32, bytes, bytes)
-        );
     }
 
     /// @notice Slice a bytes memory array from [start, end).

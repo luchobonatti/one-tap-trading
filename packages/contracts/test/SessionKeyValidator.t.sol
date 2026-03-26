@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { Test } from "forge-std/Test.sol";
 import { SessionKeyValidator } from "src/SessionKeyValidator.sol";
 import { ISessionKeyValidator } from "src/interfaces/ISessionKeyValidator.sol";
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
 
 /// @dev Full test suite for SessionKeyValidator.
 contract SessionKeyValidatorTest is Test {
@@ -78,33 +79,43 @@ contract SessionKeyValidatorTest is Test {
         return _wrapExecute(perpEngine, inner);
     }
 
-    /// @dev Create a mock PackedUserOperation ABI-encoded bytes.
+    /// @dev Create a mock PackedUserOperation struct.
     function _createPackedUserOp(address sender, bytes memory callData, bytes memory signature)
         internal
         pure
-        returns (bytes memory)
+        returns (PackedUserOperation memory)
     {
-        return abi.encode(
-            sender, // sender
-            uint256(0), // nonce
-            bytes(""), // initCode
-            callData, // callData (already wrapped in execute)
-            bytes32(0), // accountGasLimits
-            uint256(0), // preVerificationGas
-            bytes32(0), // gasFees
-            bytes(""), // paymasterAndData
-            signature // signature
-        );
+        return PackedUserOperation({
+            sender: sender,
+            nonce: 0,
+            initCode: "",
+            callData: callData,
+            accountGasLimits: bytes32(0),
+            preVerificationGas: 0,
+            gasFees: bytes32(0),
+            paymasterAndData: "",
+            signature: signature
+        });
     }
 
-    /// @dev Create a valid ECDSA signature for a userOpHash using the session key.
+    /// @dev Create a valid UserOp signature (Kernel v3 format) for validateUserOp.
+    ///      Format: mode(0x00) + sessionKeyAddress(20B) + ecdsaSig(65B) = 86 bytes.
     function _createSignature(bytes32 userOpHash) internal view returns (bytes memory) {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
         bytes memory ecdsaSig = abi.encodePacked(r, s, v);
-        // Combine sessionKey (20 bytes) + ecdsaSig (65 bytes) = 85 bytes total
-        return abi.encodePacked(sessionKey, ecdsaSig);
+        // Kernel v3 signature: mode(0x00) + sessionKey(20B) + ecdsaSig(65B) = 86 bytes
+        return abi.encodePacked(bytes1(0x00), sessionKey, ecdsaSig);
+    }
+
+    /// @dev Create an ERC-1271 signature for isValidSignatureWithSender (no mode byte).
+    ///      Format: sessionKeyAddress(20B) + ecdsaSig(65B) = 85 bytes.
+    function _createERC1271Signature(bytes32 hash) internal view returns (bytes memory) {
+        bytes32 ethSignedHash =
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
+        return abi.encodePacked(sessionKey, abi.encodePacked(r, s, v));
     }
 
     // ─── Unit Tests: Happy Path ───────────────────────────────────────────────
@@ -159,7 +170,7 @@ contract SessionKeyValidatorTest is Test {
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
         bytes memory signature = _createSignature(userOpHash);
-        bytes memory userOp = _createPackedUserOp(owner, callData, signature);
+        PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, signature);
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0); // VALIDATION_SUCCESS
@@ -176,7 +187,8 @@ contract SessionKeyValidatorTest is Test {
         // First openPosition: 2k USDC
         bytes memory callData1 = _createOpenPositionCalldata(true, 2_000e6, 10);
         bytes32 userOpHash1 = keccak256("hash1");
-        bytes memory userOp1 = _createPackedUserOp(owner, callData1, _createSignature(userOpHash1));
+        PackedUserOperation memory userOp1 =
+            _createPackedUserOp(owner, callData1, _createSignature(userOpHash1));
 
         uint256 result1 = validator.validateUserOp(userOp1, userOpHash1);
         assertEq(result1, 0);
@@ -185,7 +197,8 @@ contract SessionKeyValidatorTest is Test {
         // Second openPosition: 2.5k USDC (total 4.5k, within limit)
         bytes memory callData2 = _createOpenPositionCalldata(true, 2_500e6, 10);
         bytes32 userOpHash2 = keccak256("hash2");
-        bytes memory userOp2 = _createPackedUserOp(owner, callData2, _createSignature(userOpHash2));
+        PackedUserOperation memory userOp2 =
+            _createPackedUserOp(owner, callData2, _createSignature(userOpHash2));
 
         uint256 result2 = validator.validateUserOp(userOp2, userOpHash2);
         assertEq(result2, 0);
@@ -202,7 +215,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createClosePositionCalldata(1);
         bytes32 userOpHash = keccak256("close_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0);
@@ -221,7 +235,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1); // VALIDATION_FAILED
@@ -240,7 +255,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);
@@ -259,10 +275,10 @@ contract SessionKeyValidatorTest is Test {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKeyPriv, ethSignedHash);
-        bytes memory wrongSig = abi.encodePacked(wrongKey, abi.encodePacked(r, s, v));
+        bytes memory wrongSig = abi.encodePacked(bytes1(0x00), wrongKey, abi.encodePacked(r, s, v));
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
-        bytes memory userOp = _createPackedUserOp(owner, callData, wrongSig);
+        PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, wrongSig);
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);
@@ -279,7 +295,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createClosePositionCalldata(1);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);
@@ -297,7 +314,8 @@ contract SessionKeyValidatorTest is Test {
         bytes memory inner = abi.encodeWithSelector(OPEN_POSITION_SELECTOR, true, 1_000e6, 10);
         bytes memory callData = _wrapExecute(mockUSDC, inner); // wrong target
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);
@@ -313,7 +331,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 2_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);
@@ -338,9 +357,9 @@ contract SessionKeyValidatorTest is Test {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(otherPriv, ethSignedHash);
-        bytes memory badSig = abi.encodePacked(sessionKey, abi.encodePacked(r, s, v));
+        bytes memory badSig = abi.encodePacked(bytes1(0x00), sessionKey, abi.encodePacked(r, s, v));
 
-        bytes memory userOp = _createPackedUserOp(owner, callData, badSig);
+        PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, badSig);
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1); // VALIDATION_FAILED
 
@@ -359,7 +378,8 @@ contract SessionKeyValidatorTest is Test {
         // Pass raw inner callData without execute wrapper — validator should reject
         bytes memory rawCallData = abi.encodeWithSelector(OPEN_POSITION_SELECTOR, true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, rawCallData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, rawCallData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1); // Outer selector != KERNEL_EXECUTE_SELECTOR
@@ -416,7 +436,7 @@ contract SessionKeyValidatorTest is Test {
         );
 
         bytes32 hash = keccak256("test_message");
-        bytes memory signature = _createSignature(hash);
+        bytes memory signature = _createERC1271Signature(hash);
 
         bytes4 result = validator.isValidSignatureWithSender(owner, hash, signature);
         assertEq(result, bytes4(0x1626ba7e));
@@ -465,7 +485,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0);
@@ -484,7 +505,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0);
@@ -503,7 +525,8 @@ contract SessionKeyValidatorTest is Test {
         uint256 collateral = spendLimit / 2;
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 0);
@@ -524,7 +547,8 @@ contract SessionKeyValidatorTest is Test {
 
         bytes memory callData = _createOpenPositionCalldata(true, collateral, 10);
         bytes32 userOpHash = keccak256("test_hash");
-        bytes memory userOp = _createPackedUserOp(owner, callData, _createSignature(userOpHash));
+        PackedUserOperation memory userOp =
+            _createPackedUserOp(owner, callData, _createSignature(userOpHash));
 
         uint256 result = validator.validateUserOp(userOp, userOpHash);
         assertEq(result, 1);

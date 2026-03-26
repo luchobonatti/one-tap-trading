@@ -47,9 +47,10 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     bytes4 private constant GRANT_SESSION_SELECTOR =
         bytes4(keccak256("grantSession(address,uint48,address,bytes4[],uint256)"));
 
-    /// @notice Selector for ERC-7579 installModule(uint256,address,bytes).
-    bytes4 private constant INSTALL_MODULE_SELECTOR =
-        bytes4(keccak256("installModule(uint256,address,bytes)"));
+    /// @notice Selector for Kernel v3.1 installValidations(bytes21[],(uint32,address)[],bytes[],bytes[]).
+    ///         Kernel v3.1 uses this — not ERC-7579 installModule — to register validator modules.
+    bytes4 private constant INSTALL_VALIDATIONS_SELECTOR =
+        bytes4(keccak256("installValidations(bytes21[],(uint32,address)[],bytes[],bytes[])"));
 
     /// @notice Default gas allowance per UserOperation (1 Gwei — covers MegaETH testnet gas,
     ///         which runs ~30× higher than mainnet; observed delegation maxCost ~407 M wei).
@@ -247,7 +248,7 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     ///      - PerpEngine: openPosition / closePosition
     ///      - MockUSDC.approve: spender must be allowedTarget (PerpEngine)
     ///      - SessionKeyValidator.grantSession: targetContract must be allowedTarget (PerpEngine)
-    ///      - sender.installModule: moduleTypeId must be 1 (validator), module must be sessionKeyValidator
+    ///      - sender.installValidations: vIds[0] must be 0x01||sessionKeyValidator (SECONDARY type)
     function _requireAllowedCall(address target, bytes memory callData, address sender)
         internal
         view
@@ -289,19 +290,38 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
             }
             if (grantTarget != allowedTarget) revert TargetNotAllowed(grantTarget);
         } else if (target == sender) {
-            // Allow a smart account to install only the SessionKeyValidator module on itself.
-            // installModule(uint256 moduleTypeId, address module, bytes calldata initData)
-            // ABI layout: selector(4) + moduleTypeId(32) + module(32) + initData-offset(32) = 100 min.
-            if (selector != INSTALL_MODULE_SELECTOR) revert SelectorNotAllowed(selector);
-            if (callData.length < 100) revert SelectorNotAllowed(selector);
-            uint256 moduleTypeId;
-            address module;
+            // Allow a smart account to install only the SessionKeyValidator as a secondary validator.
+            // Kernel v3.1 uses installValidations(bytes21[],(uint32,address)[],bytes[],bytes[]).
+            // vIds[0] = bytes21(0x01 || sessionKeyValidator): type=SECONDARY, address=SKV.
+            //
+            // ABI layout after selector (4 bytes):
+            //   [4:36]   = offset to vIds array  = 0x80 (128)
+            //   [36:68]  = offset to configs array
+            //   [68:100] = offset to validationData array
+            //   [100:132]= offset to hookData array
+            //   [132:164]= vIds.length (must be 1)
+            //   [164:196]= vIds[0] as bytes32 (21-byte vId, left-aligned)
+            if (selector != INSTALL_VALIDATIONS_SELECTOR) revert SelectorNotAllowed(selector);
+            if (callData.length < 196) revert SelectorNotAllowed(selector);
+
+            uint256 vIdsOffset;
+            uint256 vIdsLength;
+            bytes32 vIdSlot;
             assembly {
                 let base := add(callData, 0x20)
-                moduleTypeId := mload(add(base, 4))
-                module := and(mload(add(base, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
+                vIdsOffset := mload(add(base, 4))
+                vIdsLength := mload(add(base, 132))
+                vIdSlot := mload(add(base, 164))
             }
-            if (moduleTypeId != 1) revert SelectorNotAllowed(selector); // 1 = MODULE_TYPE_VALIDATOR
+            // Enforce canonical ABI layout: vIds offset must be 128 (4 head params × 32 bytes).
+            // A non-standard offset lets an attacker craft calldata where this gate reads a
+            // benign vId while Kernel's abi.decode follows a different offset to another array.
+            if (vIdsOffset != 128) revert SelectorNotAllowed(selector);
+            if (vIdsLength != 1) revert SelectorNotAllowed(selector);
+
+            // bytes21 is left-aligned: byte[0]=type, bytes[1..20]=address, bytes[21..31]=zeros.
+            if (bytes1(vIdSlot) != 0x01) revert SelectorNotAllowed(selector);
+            address module = address(uint160(uint256(vIdSlot) >> 88));
             if (module != sessionKeyValidator) revert TargetNotAllowed(module);
         } else {
             revert TargetNotAllowed(target);
