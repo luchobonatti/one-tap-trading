@@ -6,7 +6,7 @@
 
 ## Product Context
 
-One Tap Trading is a gamified, mobile-first trading web app on MegaETH. Users tap a grid square overlaid on a real-time price chart to open leveraged perpetual futures positions fully on-chain. Zero wallet popups, zero forms, zero financial knowledge required.
+One Tap Trading is a space-themed trading game on MegaETH. A geometric spaceship flies at the rhythm of the live price — users set their leverage (fuel gauge 2x–30x) and tap LONG or SHORT to open leveraged perpetual futures positions fully on-chain. Zero wallet popups, zero forms, zero financial knowledge required. The aesthetic is 2D flat neon: deep space background, parallax starfield, glowing price trail, neon action buttons.
 
 ## Stack & Conventions
 
@@ -14,7 +14,7 @@ One Tap Trading is a gamified, mobile-first trading web app on MegaETH. Users ta
 
 - **Framework:** Next.js 15 (App Router) + React 19
 - **Styling:** Tailwind CSS v4
-- **Rendering:** Canvas 2D for real-time chart (bypasses React state), React DOM for UI shell
+- **Rendering:** PixiJS WebGL for real-time game canvas (bypasses React state), React DOM for UI shell
 - **Types:** Strict TypeScript — `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`
 - **Linting:** oxlint (typescript, import, unicorn plugins)
 - **Formatting:** oxfmt
@@ -53,7 +53,7 @@ One Tap Trading is a gamified, mobile-first trading web app on MegaETH. Users ta
 ```
 apps/
   web/                → Next.js 15 frontend (user-facing trading interface)
-  indexer/            → Rust Axum backend (blockchain indexing, WebSocket price relay, leaderboard API)
+  indexer/            → Rust Axum backend (blockchain indexing, REST price/positions API, leaderboard API)
 packages/
   contracts/          → Solidity smart contracts (PerpEngine, SessionKeyValidator, Paymaster)
   shared-types/       → TypeScript types generated from contract ABIs
@@ -64,9 +64,9 @@ docs/
 ### Key Integration Points
 
 - Frontend imports types from `@one-tap/shared-types` (workspace dependency)
-- Frontend connects to indexer via WebSocket for real-time price data
-- Frontend sends transactions to MegaETH via `eth_sendRawTransactionSync` (EIP-7966)
-- Indexer subscribes to MegaETH events via `alloy` and serves REST + WebSocket APIs
+- Frontend polls `PriceOracle.getPrice()` on-chain every 500ms for real-time price data
+- Frontend sends transactions to MegaETH via standard async `eth_sendRawTransaction`
+- Indexer subscribes to MegaETH events via `alloy` and serves REST APIs
 - Contracts interact with RedStone Bolt oracle for price feeds
 
 ### Blockchain
