@@ -1,6 +1,6 @@
 # Spec-Driven Development (SDD) Artifacts
 
-This directory contains file-based SDD artifacts. The primary artifact store is **engram** (persistent memory); see engram observations prefixed `sdd/` for the canonical versions.
+This directory contains file-based SDD artifacts. The primary artifact store is **engram** — a persistent memory layer built into the agent toolchain. To query it, ask the agent: `search engram for sdd/phase3-game-interface` or any `sdd/{change-name}/{artifact-type}` key. File artifacts here are kept for changes that predate engram or were explicitly exported.
 
 Each change gets its own subdirectory with the following artifacts:
 
