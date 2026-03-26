@@ -108,18 +108,17 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const client = await getSmartAccountClient();
   const smartAccountAddress = client.account.address as Address;
 
-  // readContract reverts when the account is not yet deployed (first-time user),
-  // so we treat any failure as "not installed".
+  const accountCode = await publicClient.getCode({ address: smartAccountAddress });
+  const accountDeployed = accountCode !== undefined && accountCode !== "0x";
+
   let moduleInstalled = false;
-  try {
+  if (accountDeployed) {
     moduleInstalled = await publicClient.readContract({
       address: smartAccountAddress,
       abi: IS_MODULE_INSTALLED_ABI,
       functionName: "isModuleInstalled",
       args: [1n, sessionKeyValidatorAddress[6343], "0x"],
     });
-  } catch {
-    moduleInstalled = false;
   }
 
   const installModuleCallData = encodeFunctionData({

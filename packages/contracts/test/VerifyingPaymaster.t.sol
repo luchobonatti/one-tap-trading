@@ -556,6 +556,63 @@ contract VerifyingPaymasterTest is Test {
         assertEq(paymaster.gasAllowancePerOp(), newAllowance);
     }
 
+    /// @dev Fuzz the installModule authorization gate.
+    ///      The paymaster uses manual calldata parsing (assembly) in _requireAllowedCall —
+    ///      this test proves only (target==sender, moduleTypeId==1, module==SKV) passes.
+    function test_fuzz_ValidatePaymasterUserOp_InstallModule(
+        address fuzzTarget,
+        uint256 fuzzModuleTypeId,
+        address fuzzModule
+    ) public {
+        vm.assume(fuzzTarget != address(0));
+        vm.assume(fuzzModule != address(0));
+
+        bytes memory installData = abi.encodeWithSelector(
+            INSTALL_MODULE_SELECTOR, fuzzModuleTypeId, fuzzModule, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(fuzzTarget, uint256(0), installData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        bool isExactShape =
+            fuzzTarget == user && fuzzModuleTypeId == 1 && fuzzModule == sessionKeyValidator;
+
+        vm.prank(entryPoint);
+
+        if (isExactShape) {
+            (, uint256 validationData) =
+                paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+            assertEq(validationData, 0);
+        } else if (fuzzTarget != user) {
+            // Wrong target: fuzzTarget is not allowedTarget / mockUsdc / sessionKeyValidator / sender.
+            // Skip if it accidentally matches one of the whitelisted targets.
+            vm.assume(
+                fuzzTarget != perpEngine && fuzzTarget != mockUsdc
+                    && fuzzTarget != sessionKeyValidator
+            );
+            vm.expectRevert(
+                abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, fuzzTarget)
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        } else if (fuzzModuleTypeId != 1) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IVerifyingPaymaster.SelectorNotAllowed.selector, INSTALL_MODULE_SELECTOR
+                )
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        } else {
+            // fuzzTarget == user, fuzzModuleTypeId == 1, fuzzModule != sessionKeyValidator
+            vm.expectRevert(
+                abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, fuzzModule)
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        }
+    }
+
     // ─── Helper functions ─────────────────────────────────────────────────────
 
     /// @dev Build an ERC-7579 single-call execute callData targeting `target` with `innerData`.
