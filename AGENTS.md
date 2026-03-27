@@ -65,7 +65,7 @@ docs/
 
 - Frontend imports types from `@one-tap/shared-types` (workspace dependency)
 - Frontend polls `PriceOracle.getPrice()` on-chain every 500ms for real-time price data
-- Frontend constructs ERC-4337 UserOperations and submits them via `sendUserOperation` to the Alto bundler (`eth_sendRawTransaction` is only used by non-AA scripts/tooling)
+- Frontend constructs ERC-4337 UserOperations and submits them via `sendUserOperation` to the ZeroDev bundler (`eth_sendRawTransaction` is only used by non-AA scripts/tooling)
 - Indexer subscribes to MegaETH events via `alloy` and serves REST APIs
 - Contracts interact with RedStone Bolt oracle for price feeds
 
