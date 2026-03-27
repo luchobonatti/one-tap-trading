@@ -36,23 +36,18 @@ Passkey (WebAuthn) signature verification requires a software P256.sol verifier 
 **EIP-7966 not available on Carrot.**
 `eth_sendRawTransactionSync` is not supported. Use standard async `eth_sendRawTransaction` and poll for receipts.
 
-**No native ERC-4337 bundler on MegaETH RPC — use self-hosted Alto.**
-`eth_sendUserOperation` is not supported on the native MegaETH RPC. Pimlico does not support chain 6343. Solution: self-host Alto with `tools/alto/megaeth-carrot.json`. Full setup in `tools/alto/README.md`.
-
-**Alto cannot auto-deploy its simulation contracts on MegaETH.**
-Alto deploys simulation contracts on startup using EIP-1559 transactions, which MegaETH rejects. They must be pre-deployed manually with `cast send --legacy`. Already done — see addresses below. Pass `--deploy-simulations-contract false` to Alto.
-
-**Alto simulation contract gas on MegaETH.**
-EntryPointSimulations07 (20 KB) costs ~210M gas. PimlicoSimulations (14 KB) costs ~150M gas. Deploy with `cast send --legacy --gas-limit 250000000`.
-
-**Alto pre-deployed simulation contracts on Carrot (do not redeploy):**
-- EntryPointSimulations v0.7: `0x097219E615B5042095A707797fc30d67DbD58045`
-- PimlicoSimulations: `0xf64BddD711a41aA281a00Ff5D90aa0aB59014402`
-
-**ZeroDev SDK uses `zd_getUserOperationGasPrice` — Alto doesn't support it.**
-Use `permissionless` (`createSmartAccountClient`) with a manual `estimateFeesPerGas` that calls Alto's `pimlico_getUserOperationGasPrice` instead. See `tools/alto/README.md`.
+**No native ERC-4337 bundler on MegaETH RPC — use ZeroDev hosted.**
+`eth_sendUserOperation` is not natively supported on the MegaETH RPC. Use the ZeroDev
+hosted bundler (v3 API, supports chain 6343). Create a project at
+[dashboard.zerodev.app](https://dashboard.zerodev.app) and set `NEXT_PUBLIC_BUNDLER_RPC_URL`
+in `.env`. No local process needed — `pnpm dev` is enough.
 
 Full details: [`docs/megaeth-aa-infrastructure.md`](megaeth-aa-infrastructure.md)
+
+**Chain ID confusion: ZeroDev dashboard lists 6342, actual chain is 6343.**
+Both refer to the same Carrot testnet — ethereum-lists had the wrong ID. viem's
+`megaethTestnet` definition already uses 6343. ZeroDev's v3 bundler routes correctly
+to chain 6343 regardless of what the dashboard label says.
 
 ---
 
@@ -111,6 +106,11 @@ The lint is configured in `Cargo.toml` but the compiler does not enforce it at t
 ---
 
 ## Auth / Session Keys
+
+**`revokeSession()` must be whitelisted in VerifyingPaymaster.**
+`grantSession` reverts with `SessionAlreadyGranted` if a session is already active. The delegation flow calls `revokeSession()` first — its selector `0xc4605d8c` must be in the paymaster's allowed selectors or you get AA33. Already fixed in the current deployment.
+
+**Current paymaster address: `0x598a19bD8e9730b0b02aAc474D243F3045fe2B1a`** (whitelists: approve, grantSession, revokeSession, installValidations, openPosition, closePosition).
 
 **DataRunnerPage introduced a wrong digest formula and wrong nonce during the perps migration.**
 The correct signing flow lives in the pre-existing passkey pipeline. Any new page that sends transactions must go through that pipeline, not re-implement signing. See the `bugfix: passkey/session-key pipeline` commit for details.

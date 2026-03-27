@@ -14,8 +14,12 @@ import type { Address, Hex } from "viem";
 import { verifyingPaymasterAddress } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 
-const BUNDLER_RPC_URL =
-  process.env.NEXT_PUBLIC_BUNDLER_RPC_URL ?? "http://localhost:4337";
+if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_BUNDLER_RPC_URL is not set — create a project at https://dashboard.zerodev.app",
+  );
+}
+const BUNDLER_RPC_URL = process.env.NEXT_PUBLIC_BUNDLER_RPC_URL;
 
 const CHAIN_RPC_URL =
   process.env.NEXT_PUBLIC_CHAIN_RPC_URL ?? "https://carrot.megaeth.com/rpc";

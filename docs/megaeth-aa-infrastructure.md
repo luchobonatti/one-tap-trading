@@ -16,94 +16,32 @@ Use EntryPoint v0.7. The `account-abstraction` library is a git submodule under
 ## Bundler
 
 `eth_sendUserOperation` is NOT supported on the MegaETH native RPC.
-Pimlico does NOT support chain 6343. We self-host **Alto** (Pimlico's open-source bundler).
+We use **ZeroDev's hosted bundler** (v3 API), which supports chain 6343.
 
-**Setup:** See `tools/alto/README.md` for full instructions.
-**Config:** `tools/alto/megaeth-carrot.json` (committed to repo).
-
-### Key MegaETH flags for Alto
+**Setup:** Create a project at [dashboard.zerodev.app](https://dashboard.zerodev.app),
+select "MegaETH Testnet", and copy the bundler URL into `.env`.
 
 ```bash
-node alto/src/esm/cli/index.js \
-  --config tools/alto/megaeth-carrot.json \
-  --executor-private-keys "$DEPLOYER_PRIVATE_KEY" \
-  --utility-private-key "$DEPLOYER_PRIVATE_KEY"
+BUNDLER_RPC_URL=https://rpc.zerodev.app/api/v3/{PROJECT_ID}/chain/6343
+NEXT_PUBLIC_BUNDLER_RPC_URL=https://rpc.zerodev.app/api/v3/{PROJECT_ID}/chain/6343
 ```
 
-### Alto simulation contracts (pre-deployed on Carrot)
-
-Alto requires simulation contracts for gas estimation. These cannot be deployed
-automatically by Alto because MegaETH requires `--legacy` transactions.
-**They are already deployed — do not redeploy.**
-
-| Contract | Address |
-|----------|---------|
-| EntryPointSimulations v0.7 | `0x097219E615B5042095A707797fc30d67DbD58045` |
-| PimlicoSimulations | `0xf64BddD711a41aA281a00Ff5D90aa0aB59014402` |
-
-### POC verified
-
-Full end-to-end test passed on Carrot:
-- ZeroDev Kernel v3 account created and funded
-- UserOp submitted → confirmed in one block (~10ms)
-- Bundle tx: `0xc3b3bc65eb390b8584b08fed46a4112d892d4401f106495438af367391e950c6`
+No local bundler process required. `pnpm dev` is enough.
 
 ### Frontend stack (no backend involvement)
 
-```
-Browser (permissionless + @zerodev/sdk + @zerodev/passkey-validator)
-    │
-    │  eth_sendUserOperation
-    ▼
-Alto bundler :4337
-    │
-    │  handleOps() — legacy tx
-    ▼
-EntryPoint v0.7 → MegaETH Carrot
+```mermaid
+graph LR
+  A[Browser<br/>permissionless + @zerodev/sdk] -->|eth_sendUserOperation| B[ZeroDev Bundler<br/>hosted]
+  B -->|handleOps — legacy tx| C[EntryPoint v0.7<br/>MegaETH Carrot]
 ```
 
 **The Rust indexer is read-only** — prices, positions, on-chain events only.
-Transactions go directly from the browser to Alto. There is no relay endpoint.
-
-**Why not ZeroDev SDK directly?**
-ZeroDev's client calls `zd_getUserOperationGasPrice` which Alto does not implement.
-Use `createSmartAccountClient` from `permissionless` and override `estimateFeesPerGas`
-to call Alto's `pimlico_getUserOperationGasPrice`. See the code snippet below.
+Transactions go directly from the browser to the ZeroDev bundler.
 
 **Required packages:**
 ```bash
 pnpm add @zerodev/sdk @zerodev/passkey-validator permissionless viem tslib
-```
-
-**Gas price override (required for Alto compatibility):**
-```typescript
-import { createSmartAccountClient } from "permissionless";
-import { http } from "viem";
-
-const smartAccountClient = createSmartAccountClient({
-  account: kernelAccount,
-  chain: megaEthCarrot,
-  bundlerTransport: http(process.env.NEXT_PUBLIC_BUNDLER_RPC_URL),
-  userOperation: {
-    estimateFeesPerGas: async () => {
-      const res = await fetch(process.env.NEXT_PUBLIC_BUNDLER_RPC_URL!, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "pimlico_getUserOperationGasPrice",
-          params: [],
-        }),
-      }).then((r) => r.json());
-      const { maxFeePerGas, maxPriorityFeePerGas } = res.result.standard;
-      return {
-        maxFeePerGas: BigInt(maxFeePerGas),
-        maxPriorityFeePerGas: BigInt(maxPriorityFeePerGas),
-      };
-    },
-  },
-});
 ```
 
 ## RIP-7212 (P256 Precompile)
@@ -130,8 +68,6 @@ Full artifact: [`packages/contracts/deployments/6343.json`](../packages/contract
 | Contract | Address |
 |----------|---------|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| EntryPointSimulations v0.7 | `0x097219E615B5042095A707797fc30d67DbD58045` |
-| PimlicoSimulations | `0xf64BddD711a41aA281a00Ff5D90aa0aB59014402` |
 | SessionKeyValidator | `0x672B55126649951AfbbD13d82015691BC8BAD007` |
 | VerifyingPaymaster | `0xbcB4B1FdEC3958BEAc5542B4752f7FAf4BcaF226` |
 
@@ -174,7 +110,7 @@ lib/trading/submit.ts — openTrade({ isLong, collateral, leverage, accountAddre
     │       → NO wallet popup
     │
     └─ 6. submitUserOp(signedOp)
-            → eth_sendUserOperation → Alto :4337 → EntryPoint v0.7 → MegaETH
+            → eth_sendUserOperation → ZeroDev bundler → EntryPoint v0.7 → MegaETH
 ```
 
 ### PriceBounds struct

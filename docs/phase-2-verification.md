@@ -2,7 +2,7 @@
 
 **Network:** MegaETH Carrot (chain ID 6343)
 **Verified:** 2026-03-26
-**Bundler:** Alto self-hosted — `tools/alto/megaeth-carrot.json`
+**Bundler:** ZeroDev hosted — `https://rpc.zerodev.app/api/v3/.../chain/6343`
 
 ---
 

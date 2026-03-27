@@ -52,6 +52,11 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     bytes4 private constant INSTALL_VALIDATIONS_SELECTOR =
         bytes4(keccak256("installValidations(bytes21[],(uint32,address)[],bytes[],bytes[])"));
 
+    /// @notice Selector for SessionKeyValidator revokeSession().
+    ///         Called in delegation batches when an existing session must be cleared before
+    ///         grantSession(), because grantSession reverts if a session is already active.
+    bytes4 private constant REVOKE_SESSION_SELECTOR = bytes4(keccak256("revokeSession()"));
+
     /// @notice Default gas allowance per UserOperation (1 Gwei — covers MegaETH testnet gas,
     ///         which runs ~30× higher than mainnet; observed delegation maxCost ~407 M wei).
     uint256 private constant DEFAULT_GAS_ALLOWANCE = 1_000_000_000;
@@ -277,18 +282,23 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
             }
             if (spender != allowedTarget) revert TargetNotAllowed(spender);
         } else if (target == sessionKeyValidator) {
-            if (selector != GRANT_SESSION_SELECTOR) revert SelectorNotAllowed(selector);
-            // grantSession(address sessionKey, uint48 validUntil, address targetContract, ...)
-            // ABI layout: selector(4) + sessionKey(32) + validUntil(32) + targetContract(32)
-            if (callData.length < 100) revert SelectorNotAllowed(selector);
-            address grantTarget;
-            assembly {
-                grantTarget := and(
-                    mload(add(add(callData, 0x20), 68)),
-                    0xffffffffffffffffffffffffffffffffffffffff
-                )
+            if (selector == REVOKE_SESSION_SELECTOR) {
+                // revokeSession() takes no arguments — no further validation needed.
+            } else if (selector == GRANT_SESSION_SELECTOR) {
+                // grantSession(address sessionKey, uint48 validUntil, address targetContract, ...)
+                // ABI layout: selector(4) + sessionKey(32) + validUntil(32) + targetContract(32)
+                if (callData.length < 100) revert SelectorNotAllowed(selector);
+                address grantTarget;
+                assembly {
+                    grantTarget := and(
+                        mload(add(add(callData, 0x20), 68)),
+                        0xffffffffffffffffffffffffffffffffffffffff
+                    )
+                }
+                if (grantTarget != allowedTarget) revert TargetNotAllowed(grantTarget);
+            } else {
+                revert SelectorNotAllowed(selector);
             }
-            if (grantTarget != allowedTarget) revert TargetNotAllowed(grantTarget);
         } else if (target == sender) {
             // Allow a smart account to install only the SessionKeyValidator as a secondary validator.
             // Kernel v3.1 uses installValidations(bytes21[],(uint32,address)[],bytes[],bytes[]).

@@ -19,8 +19,12 @@ import {
 } from "@/lib/aa/signer";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
 
-const BUNDLER_RPC_URL =
-  process.env.NEXT_PUBLIC_BUNDLER_RPC_URL ?? "http://localhost:4337";
+if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_BUNDLER_RPC_URL is not set — create a project at https://dashboard.zerodev.app",
+  );
+}
+const BUNDLER_RPC_URL = process.env.NEXT_PUBLIC_BUNDLER_RPC_URL;
 
 const PERP_ENGINE = perpEngineAddress[6343];
 const PRICE_ORACLE = priceOracleAddress[6343];

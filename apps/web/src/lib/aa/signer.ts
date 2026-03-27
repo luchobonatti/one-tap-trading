@@ -14,8 +14,12 @@ import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient, estimateFeesPerGas } from "@/lib/aa/client";
 import type { StoredSession } from "@/lib/aa/session-key";
 
-const BUNDLER_RPC_URL =
-  process.env.NEXT_PUBLIC_BUNDLER_RPC_URL ?? "http://localhost:4337";
+if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_BUNDLER_RPC_URL is not set — create a project at https://dashboard.zerodev.app",
+  );
+}
+const BUNDLER_RPC_URL = process.env.NEXT_PUBLIC_BUNDLER_RPC_URL;
 
 const ENTRY_POINT_ADDRESS =
   (process.env.NEXT_PUBLIC_ENTRY_POINT_ADDRESS ??
@@ -88,9 +92,9 @@ export async function buildUserOp(
 
   // Gas estimation via eth_estimateUserOperationGas fails for our SessionKeyValidator because
   // the bundler simulation calls validateUserOp with a stub hash that doesn't match any stored
-  // signature. The SKV returns VALIDATION_FAILED, which Alto reports as AA23 and aborts
-  // estimation. Fixed limits are safe here: MegaETH block gas cap is 2 billion; observed
-  // delegation (more complex than a trade) used verificationGasLimit=6.5M, callGasLimit=2.6M.
+  // signature. The SKV returns VALIDATION_FAILED and the bundler aborts estimation.
+  // Fixed limits are safe: MegaETH block gas cap is 2 billion; observed delegation
+  // (more complex than a trade) used verificationGasLimit=6.5M, callGasLimit=2.6M.
   const fees = await estimateFeesPerGas();
 
   return {
