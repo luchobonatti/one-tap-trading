@@ -13,12 +13,14 @@ export type UsePricePollingReturn = {
   stale: boolean;
 };
 
-export function usePricePolling(interval = 500): UsePricePollingReturn {
+export function usePricePolling(interval = 500, enabled = true): UsePricePollingReturn {
   const priceRef = useRef<bigint>(0n);
   const errorCount = useRef(0);
   const [stale, setStale] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return;
+
     const tick = async () => {
       try {
         const [price] = await publicClient.readContract({
@@ -42,7 +44,7 @@ export function usePricePolling(interval = 500): UsePricePollingReturn {
     void tick();
     const id = setInterval(() => void tick(), interval);
     return () => clearInterval(id);
-  }, [interval]);
+  }, [interval, enabled]);
 
   return { priceRef, stale };
 }
