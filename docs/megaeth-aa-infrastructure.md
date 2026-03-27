@@ -21,7 +21,7 @@ We use **ZeroDev's hosted bundler** (v3 API), which supports chain 6343.
 **Setup:** Create a project at [dashboard.zerodev.app](https://dashboard.zerodev.app),
 select "MegaETH Testnet", and copy the bundler URL into `.env`.
 
-```
+```bash
 BUNDLER_RPC_URL=https://rpc.zerodev.app/api/v3/{PROJECT_ID}/chain/6343
 NEXT_PUBLIC_BUNDLER_RPC_URL=https://rpc.zerodev.app/api/v3/{PROJECT_ID}/chain/6343
 ```

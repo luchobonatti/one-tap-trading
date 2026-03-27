@@ -18,6 +18,13 @@ if [[ -z "${NEXT_PUBLIC_BUNDLER_RPC_URL:-}" ]]; then
 	exit 1
 fi
 
+if [[ "$NEXT_PUBLIC_BUNDLER_RPC_URL" != https://rpc.zerodev.app/* ]]; then
+	echo "error: NEXT_PUBLIC_BUNDLER_RPC_URL does not look like a ZeroDev bundler URL" >&2
+	echo "       Expected: https://rpc.zerodev.app/api/v3/{PROJECT_ID}/chain/6343" >&2
+	echo "       Got:      $NEXT_PUBLIC_BUNDLER_RPC_URL" >&2
+	exit 1
+fi
+
 echo "[dev] Bundler → $NEXT_PUBLIC_BUNDLER_RPC_URL"
 
 cd "$ROOT"

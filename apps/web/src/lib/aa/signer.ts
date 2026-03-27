@@ -14,8 +14,12 @@ import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient, estimateFeesPerGas } from "@/lib/aa/client";
 import type { StoredSession } from "@/lib/aa/session-key";
 
-const BUNDLER_RPC_URL =
-  process.env.NEXT_PUBLIC_BUNDLER_RPC_URL ?? "http://localhost:4337";
+if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_BUNDLER_RPC_URL is not set — create a project at https://dashboard.zerodev.app",
+  );
+}
+const BUNDLER_RPC_URL = process.env.NEXT_PUBLIC_BUNDLER_RPC_URL;
 
 const ENTRY_POINT_ADDRESS =
   (process.env.NEXT_PUBLIC_ENTRY_POINT_ADDRESS ??
