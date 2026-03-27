@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Gamified trading web app on MegaETH",
   "scripts": {
-    "setup": "ln -sf ../../.env packages/contracts/.env",
+    "setup": "ln -sf ../../.env packages/contracts/.env && ln -sf ../../.env apps/web/.env",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
