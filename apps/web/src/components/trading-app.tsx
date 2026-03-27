@@ -25,7 +25,7 @@ const DEFAULT_LEVERAGE = 5;
 export function TradingApp() {
   const account = useSmartAccount();
   const session = useSessionKey(account.isReady);
-  const { priceRef, stale } = usePricePolling(500);
+  const { priceRef, stale } = usePricePolling(500, account.isReady);
   const { entries, addEntry } = useTradeHistory();
   const { formatted: usdcBalance } = useUsdcBalance(account.address);
   const canvasRef = useRef<GameCanvasHandle>(null);

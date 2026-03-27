@@ -30,6 +30,7 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
   function GameCanvasInner({ priceRef }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const appRef = useRef<Application | null>(null);
+    const warpFlashRef = useRef<((app: Application) => void) | null>(null);
     const stateRef = useRef<{
       starLayers: StarLayer[];
       ship: Spaceship;
@@ -42,6 +43,10 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
 
     useImperativeHandle(ref, () => ({
       triggerWarp() {
+        const app = appRef.current;
+        if (app !== null && app !== undefined) {
+          warpFlashRef.current?.(app);
+        }
         if (stateRef.current !== null) {
           stateRef.current.warping = true;
           setTimeout(() => {
@@ -72,13 +77,17 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
       const canvas = canvasRef.current;
       let app: Application;
       let gameTickerCb: TickerCallback<unknown> | undefined;
+      let ro: ResizeObserver | undefined;
+      let cancelled = false;
 
       const init = async () => {
         const { Application } = await import("pixi.js");
+        if (cancelled) return;
         const { createStarfield, updateStarfield } = await import("@/lib/game/starfield");
         const { createSpaceship, updateSpaceship, setSpaceshipTargetY } = await import("@/lib/game/spaceship");
         const { createPriceTrail, pushPrice, drawPriceTrail } = await import("@/lib/game/price-trail");
         const { warpFlash } = await import("@/lib/game/trade-effects");
+        if (cancelled) return;
 
         app = new Application();
         await app.init({
@@ -90,7 +99,10 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           height: canvas.offsetHeight,
         });
 
+        if (cancelled) { app.destroy(true, { children: true }); return; }
+
         appRef.current = app;
+        warpFlashRef.current = warpFlash;
 
         const starLayers = createStarfield(app);
         const ship = createSpaceship(app);
@@ -106,7 +118,7 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           priceWindow: [],
         };
 
-        const ro = new ResizeObserver(([entry]) => {
+        ro = new ResizeObserver(([entry]) => {
           if (entry === undefined) return;
           const { width, height } = entry.contentRect;
           app.renderer.resize(width, height);
@@ -148,8 +160,12 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
               const h = app.screen.height;
               let targetY = h * 0.5;
               if (state.priceWindow.length >= 2) {
-                const windowMin = Math.min(...state.priceWindow);
-                const windowMax = Math.max(...state.priceWindow);
+                let windowMin = state.priceWindow[0] ?? priceNum;
+                let windowMax = windowMin;
+                for (const p of state.priceWindow) {
+                  if (p < windowMin) windowMin = p;
+                  if (p > windowMax) windowMax = p;
+                }
                 if (windowMax > windowMin) {
                   const norm = 1 - (priceNum - windowMin) / (windowMax - windowMin);
                   targetY = Math.max(
@@ -173,9 +189,12 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
       void init();
 
       return () => {
+        cancelled = true;
+        ro?.disconnect();
         if (gameTickerCb !== undefined) app?.ticker.remove(gameTickerCb);
-        app?.destroy(false, { children: true });
+        app?.destroy(true, { children: true });
         appRef.current = null;
+        warpFlashRef.current = null;
         stateRef.current = null;
       };
     }, [priceRef]);
