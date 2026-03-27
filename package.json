@@ -7,6 +7,7 @@
   "scripts": {
     "setup": "ln -sf ../../.env packages/contracts/.env",
     "dev": "turbo run dev",
+    "dev:all": "bash scripts/dev.sh",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
