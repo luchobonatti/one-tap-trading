@@ -5,7 +5,7 @@ import type { Address } from "viem";
 import { publicClient } from "@/lib/aa/client";
 import { perpEngineAbi, perpEngineAddress } from "@one-tap/shared-types";
 import { calculatePnL } from "@/lib/trading/pnl";
-import { closeTrade } from "@/lib/trading/submit";
+import { closeTrade, waitForOp } from "@/lib/trading/submit";
 
 const PERP_ENGINE = perpEngineAddress[6343];
 const POLL_INTERVAL_MS = 3000;
@@ -46,7 +46,8 @@ export function PositionsPanel({ accountAddress, priceRef, onTradeClose }: Props
         functionName: "nextPositionId",
       });
 
-      const candidates = Array.from({ length: Number(nextId) }, (_, i) => BigInt(i));
+      const count = Math.max(0, Number(nextId) - 1);
+      const candidates = Array.from({ length: count }, (_, i) => BigInt(i + 1));
 
       const results = await Promise.allSettled(
         candidates.map((id) =>
@@ -69,7 +70,7 @@ export function PositionsPanel({ accountAddress, priceRef, onTradeClose }: Props
           !pos.isOpen
         ) continue;
         owned.push({
-          id: BigInt(i),
+          id: BigInt(i + 1),
           isLong: pos.isLong,
           collateral: pos.collateral,
           leverage: pos.leverage,
@@ -103,7 +104,7 @@ export function PositionsPanel({ accountAddress, priceRef, onTradeClose }: Props
       }
     };
 
-    const id = setInterval(updatePnl, 500);
+    const id = setInterval(updatePnl, 100);
     return () => clearInterval(id);
   }, [positions, priceRef]);
 
@@ -111,8 +112,9 @@ export function PositionsPanel({ accountAddress, priceRef, onTradeClose }: Props
     async (pos: Position) => {
       if (accountAddress === undefined) return;
       try {
+        const opHash = await closeTrade({ positionId: pos.id, accountAddress });
+        await waitForOp(opHash);
         const exitPriceBigInt = priceRef.current;
-        await closeTrade({ positionId: pos.id, accountAddress });
         const pnlRaw = calculatePnL(
           pos.entryPrice,
           exitPriceBigInt,

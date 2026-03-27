@@ -5,7 +5,7 @@ import { FuelGauge } from "@/components/fuel-gauge";
 afterEach(() => cleanup());
 
 describe("FuelGauge", () => {
-  it("renders the lever label and current value", () => {
+  it("renders the fuel label and current value", () => {
     render(<FuelGauge value={5} onChange={vi.fn()} />);
     expect(screen.getByText("5×")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /leverage 5x/i })).toBeInTheDocument();

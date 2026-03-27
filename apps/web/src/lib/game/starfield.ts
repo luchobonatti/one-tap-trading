@@ -52,7 +52,7 @@ export function updateStarfield(
     const targetScaleX = warping ? WARP_SCALE_X : 1;
     for (const star of layer.stars) {
       star.x -= layer.speed * delta;
-      if (star.x < 0) star.x += width;
+      if (star.x < 0) star.x = ((star.x % width) + width) % width;
       star.scaleX += (targetScaleX - star.scaleX) * 0.15;
     }
   }
