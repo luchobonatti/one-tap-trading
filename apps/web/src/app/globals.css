@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+@theme {
+  --color-space-bg: #030712;
+  --color-neon-cyan: #00ffff;
+  --color-neon-green: #00ff88;
+  --color-neon-red: #ff2244;
+  --color-neon-orange: #ff8800;
+  --color-star-dim: #4a5568;
+  --color-ui-text: #e2e8f0;
+}
+
+body {
+  background: var(--color-space-bg);
+  color: var(--color-ui-text);
+}
+
+@keyframes ship-flyby {
+  0%   { transform: translateX(-80px); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 80px)); opacity: 0; }
+}
