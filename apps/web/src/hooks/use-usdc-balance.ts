@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Address } from "viem";
+import { formatUnits, type Address } from "viem";
 import { publicClient } from "@/lib/aa/client";
+import { mockUsdcAddress } from "@one-tap/shared-types";
 
-const USDC_ADDRESS = (
-  process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB"
-) as Address;
+const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS as Address | undefined) ?? mockUsdcAddress[6343];
 
 const USDC_DECIMALS = 6;
 const POLL_INTERVAL_MS = 5000;
@@ -32,7 +31,11 @@ export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceRetu
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (address === undefined) return;
+    if (address === undefined) {
+      setBalance(0n);
+      setLoading(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -62,6 +65,6 @@ export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceRetu
     };
   }, [address]);
 
-  const formatted = (Number(balance) / 10 ** USDC_DECIMALS).toFixed(2);
+  const formatted = Number(formatUnits(balance, USDC_DECIMALS)).toFixed(2);
   return { balance, formatted, loading };
 }

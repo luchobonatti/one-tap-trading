@@ -35,6 +35,11 @@ describe("calculatePnL", () => {
     expect(pnl).toBe(0n);
   });
 
+  it("zero entry price → zero PnL", () => {
+    const pnl = calculatePnL(0n, 2200_00000000n, COLLATERAL, LEVERAGE, true);
+    expect(pnl).toBe(0n);
+  });
+
   it("price unchanged → zero PnL", () => {
     const pnl = calculatePnL(ENTRY, ENTRY, COLLATERAL, LEVERAGE, true);
     expect(pnl).toBe(0n);

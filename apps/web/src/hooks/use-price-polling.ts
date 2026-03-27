@@ -33,12 +33,13 @@ export function usePricePolling(interval = 500): UsePricePollingReturn {
         errorCount.current = 0;
       } catch {
         errorCount.current += 1;
-        if (errorCount.current >= STALE_AFTER_ERRORS) {
+        if (errorCount.current === STALE_AFTER_ERRORS) {
           setStale(true);
         }
       }
     };
 
+    void tick();
     const id = setInterval(() => void tick(), interval);
     return () => clearInterval(id);
   }, [interval]);

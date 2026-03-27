@@ -19,10 +19,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("usePricePolling", () => {
-  it("writes price to priceRef without causing re-renders", async () => {
+  it("fetches price immediately on mount and writes to priceRef", async () => {
     mockReadContract.mockResolvedValue([2000_00000000n] as unknown as never);
 
     const renderCount = { current: 0 };
@@ -33,10 +34,7 @@ describe("usePricePolling", () => {
 
     const initialRenders = renderCount.current;
 
-    await act(async () => {
-      vi.advanceTimersByTime(500);
-      await Promise.resolve();
-    });
+    await act(() => vi.advanceTimersByTimeAsync(0));
 
     expect(result.current.priceRef.current).toBe(2000_00000000n);
     expect(renderCount.current).toBe(initialRenders);
@@ -53,41 +51,34 @@ describe("usePricePolling", () => {
 
     const { result } = renderHook(() => usePricePolling(500));
 
-    for (let i = 0; i < 3; i++) {
-      await act(async () => {
-        vi.advanceTimersByTime(500);
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-    }
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    await act(() => vi.advanceTimersByTimeAsync(500));
 
     expect(result.current.stale).toBe(true);
   });
 
   it("resets stale after successful fetch", async () => {
+    const threeFailures = [
+      new Error("fail"),
+      new Error("fail"),
+      new Error("fail"),
+    ] as const;
     mockReadContract
-      .mockRejectedValueOnce(new Error("fail"))
-      .mockRejectedValueOnce(new Error("fail"))
-      .mockRejectedValueOnce(new Error("fail"))
+      .mockRejectedValueOnce(threeFailures[0])
+      .mockRejectedValueOnce(threeFailures[1])
+      .mockRejectedValueOnce(threeFailures[2])
       .mockResolvedValue([2000_00000000n] as unknown as never);
 
     const { result } = renderHook(() => usePricePolling(500));
 
-    for (let i = 0; i < 3; i++) {
-      await act(async () => {
-        vi.advanceTimersByTime(500);
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-    }
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    await act(() => vi.advanceTimersByTimeAsync(500));
 
     expect(result.current.stale).toBe(true);
 
-    await act(async () => {
-      vi.advanceTimersByTime(500);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
 
     expect(result.current.stale).toBe(false);
   });
