@@ -1,7 +1,15 @@
-# Alto Bundler — MegaETH Carrot Setup
+# Alto Bundler — Archived
+
+> **This setup is no longer used.** ZeroDev now hosts a bundler for MegaETH Carrot
+> (chain 6343). Set `NEXT_PUBLIC_BUNDLER_RPC_URL` in `.env` — no local bundler needed.
+> See `docs/megaeth-aa-infrastructure.md` for the current setup.
+
+---
+
+# Alto Bundler — MegaETH Carrot Setup (historical reference)
 
 Self-hosted [Alto](https://github.com/pimlicolabs/alto) bundler for MegaETH Carrot testnet (chain 6343).
-Pimlico does not support chain 6343, so we self-host.
+Kept for reference only.
 
 ## Architecture
 
