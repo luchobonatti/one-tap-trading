@@ -9,7 +9,7 @@ import {
 import type { StoredSession } from "@/lib/aa/session-key";
 import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
 
-const STORAGE_KEY = "ott-session-key-v4";
+const STORAGE_KEY = "ott-session-key-v5";
 const VALIDATOR_ADDR = sessionKeyValidatorAddress[6343];
 
 const MOCK_SESSION: StoredSession = {
