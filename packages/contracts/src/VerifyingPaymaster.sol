@@ -57,9 +57,11 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     ///         grantSession(), because grantSession reverts if a session is already active.
     bytes4 private constant REVOKE_SESSION_SELECTOR = bytes4(keccak256("revokeSession()"));
 
-    /// @notice Default gas allowance per UserOperation (1 Gwei — covers MegaETH testnet gas,
-    ///         which runs ~30× higher than mainnet; observed delegation maxCost ~407 M wei).
-    uint256 private constant DEFAULT_GAS_ALLOWANCE = 1_000_000_000;
+    /// @notice Default gas allowance per UserOperation.
+    ///         MegaETH testnet gas runs ~30× higher than mainnet; observed delegation
+    ///         maxCost for the approve+grantSession+installValidations batch is ~68.4 Gwei.
+    ///         Set to 0.001 ETH (1e15 wei) to give ample headroom on testnet.
+    uint256 private constant DEFAULT_GAS_ALLOWANCE = 1_000_000_000_000_000;
 
     // ─── Immutables ───────────────────────────────────────────────────────────
 

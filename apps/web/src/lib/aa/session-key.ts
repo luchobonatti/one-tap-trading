@@ -78,7 +78,8 @@ const IS_MODULE_INSTALLED_ABI = [
 // Bump the version whenever the stored shape changes so old entries are
 // automatically discarded on load.  This also invalidates any session that was
 // delegated against a now-redeployed SessionKeyValidator.
-const STORAGE_KEY = "ott-session-key-v2";
+const STORAGE_KEY = "ott-session-key-v3";
+const LEGACY_KEYS = ["ott-session-key-v1", "ott-session-key-v2"] as const;
 const VALID_DURATION_SECONDS = 4 * 3600;
 
 // Correct selectors derived from keccak256 of full function signatures.
@@ -234,6 +235,9 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
 }
 
 export function loadSessionKey(): StoredSession | null {
+  for (const legacyKey of LEGACY_KEYS) {
+    sessionStorage.removeItem(legacyKey);
+  }
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (raw === null) return null;
   try {

@@ -37,7 +37,8 @@ describe("usePricePolling", () => {
     await act(() => vi.advanceTimersByTimeAsync(0));
 
     expect(result.current.priceRef.current).toBe(2000_00000000n);
-    expect(renderCount.current).toBe(initialRenders);
+    expect(result.current.price).toBe(2000_00000000n);
+    expect(renderCount.current).toBe(initialRenders + 1);
   });
 
   it("starts as not stale", () => {
@@ -83,9 +84,9 @@ describe("usePricePolling", () => {
     expect(result.current.stale).toBe(false);
   });
 
-  it("clears interval on unmount", () => {
+  it("clears timeout on unmount", () => {
     mockReadContract.mockResolvedValue([2000_00000000n] as unknown as never);
-    const clearSpy = vi.spyOn(globalThis, "clearInterval");
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
 
     const { unmount } = renderHook(() => usePricePolling(500));
     unmount();

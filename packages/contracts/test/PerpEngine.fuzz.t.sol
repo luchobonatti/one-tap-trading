@@ -217,6 +217,7 @@ contract PerpEngineFuzzTest is Test {
         uint256 warp = bound(warpSeed, 6, 3600); // 6s–1hr past staleness
 
         feed.setPrice(int256(entryPrice));
+        feed.setUpdatedAt(block.timestamp);
         usdc.mint(trader, collateral);
         vm.prank(trader);
         usdc.approve(address(settlement), collateral);

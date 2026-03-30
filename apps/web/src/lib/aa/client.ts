@@ -28,7 +28,9 @@ const ENTRY_POINT = getEntryPoint("0.7");
 
 export const publicClient = createPublicClient({
   chain: megaEthCarrot,
-  transport: http(CHAIN_RPC_URL),
+  // retryCount: 0 — retries compound queue overflow when multiple hooks poll concurrently.
+  // Callers handle errors themselves; let them decide whether to retry.
+  transport: http(CHAIN_RPC_URL, { retryCount: 0, timeout: 10_000 }),
 });
 
 type PimlicoGasPriceResponse = {
