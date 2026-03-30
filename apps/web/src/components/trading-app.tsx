@@ -13,6 +13,7 @@ import { PositionsPanel } from "@/components/positions-panel";
 import { TradeHistory, useTradeHistory } from "@/components/trade-history";
 import { openTrade, waitForOp } from "@/lib/trading/submit";
 import { useUsdcBalance } from "@/hooks/use-usdc-balance";
+import { AccountHeader } from "@/components/account-header";
 import type { GameCanvasHandle } from "@/components/game-canvas";
 
 const GameCanvas = dynamic(
@@ -25,7 +26,7 @@ const DEFAULT_LEVERAGE = 5;
 export function TradingApp() {
   const account = useSmartAccount();
   const session = useSessionKey(account.isReady);
-  const { priceRef, stale } = usePricePolling(500, account.isReady);
+  const { priceRef, price, stale } = usePricePolling(500, account.isReady);
   const { entries, addEntry } = useTradeHistory();
   const { formatted: usdcBalance } = useUsdcBalance(account.address);
   const canvasRef = useRef<GameCanvasHandle>(null);
@@ -83,17 +84,17 @@ export function TradingApp() {
         <DelegateModal session={session} />
       )}
 
-      {stale && (
-        <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-full border border-[var(--color-neon-orange)]/40 bg-[var(--color-space-bg)]/80 px-3 py-1 text-xs text-[var(--color-neon-orange)]">
-          Price feed stale
-        </div>
+      {isReady && account.address !== undefined && (
+        <AccountHeader
+          address={account.address}
+          usdcBalance={usdcBalance}
+          price={price}
+          stale={stale}
+        />
       )}
 
       {isReady && (
-        <div className="relative z-10 flex h-full flex-col items-center justify-end gap-4 pb-8">
-          <div className="absolute right-4 top-4 rounded-full border border-white/10 bg-[var(--color-space-bg)]/80 px-3 py-1 font-mono text-xs text-[var(--color-neon-cyan)] backdrop-blur-sm">
-            {usdcBalance} USDC
-          </div>
+        <div className="relative z-10 flex h-full flex-col items-center justify-end gap-4 pb-8 pt-10">
 
           <div className="flex flex-col items-center gap-6 rounded-2xl border border-white/10 bg-[var(--color-space-bg)]/80 p-6 backdrop-blur-sm">
             <FuelGauge value={leverage} onChange={setLeverage} />
