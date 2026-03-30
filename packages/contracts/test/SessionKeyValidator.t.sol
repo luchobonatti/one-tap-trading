@@ -101,7 +101,7 @@ contract SessionKeyValidatorTest is Test {
     /// @dev Create a valid UserOp signature (Kernel v3.1 SECONDARY mode) for validateUserOp.
     ///      Format: mode(0x01) + validatorAddress(20B) + sessionKeyAddress(20B) + ecdsaSig(65B)
     ///      = 106 bytes total.
-    ///      Diagnostic result: Kernel does NOT strip — validator receives the full 106-byte sig.
+    ///      This is the format the validator receives when called from Kernel v3.1.
     function _createSignature(bytes32 userOpHash) internal view returns (bytes memory) {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
@@ -481,23 +481,23 @@ contract SessionKeyValidatorTest is Test {
         assertFalse(validator.isModuleType(999));
     }
 
-    // ─── Diagnostic Tests: Kernel Signature Stripping Behaviour ─────────────
+    // ─── Signature Format Regression Tests ───────────────────────────────────
     //
-    // These tests answer: does Kernel v3.1 pass the full 106-byte signature to
-    // validateUserOp, or does it strip the 21-byte prefix first (leaving 85 bytes)?
+    // These tests verify that SessionKeyValidator.validateUserOp correctly enforces
+    // the 106-byte SECONDARY-mode signature layout:
+    //   0x01(1B) + validatorAddr(20B) + sessionKeyAddr(20B) + ecdsaSig(65B) = 106 bytes
     //
-    // ERC-7579 specifies that the module receives the full validator-specific data
-    // without modification (Kernel does NOT strip).  Scenario B (106-byte) should
-    // pass; Scenario A (85-byte, stripped) should fail under the new format.
+    // Note: these tests call validateUserOp directly — they do NOT route through
+    // Kernel and therefore cannot observe Kernel's forwarding behaviour.
+    // They serve as a format regression guard: the 106-byte layout must pass,
+    // the 85-byte (old stripped) layout must fail.
     //
-    // Result: Scenario B passes → contract must read sessionKey from [21:41] and
-    // ecdsaSig from [41:106].
     // Byte count: 0x01(1) + validatorAddr(20) + sessionKeyAddr(20) + ecdsaSig(65) = 106.
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @dev Scenario A — "Kernel strips the 21-byte prefix".
-    ///      Calls validateUserOp directly with an 85-byte sig (sessionKeyAddr + ecdsaSig).
-    ///      Expected to FAIL under the new 106-byte format (proves Kernel does NOT strip).
+    /// @dev Scenario A — old 85-byte format (no mode byte, no validator address).
+    ///      Calls validateUserOp directly with sessionKeyAddr(20B) + ecdsaSig(65B).
+    ///      Expected to FAIL: 85 < 106 minimum length enforced by the new contract.
     function test_Diagnostic_NewSig_DirectCallScenarioA() public {
         address skv = address(validator);
         bytes4[] memory selectors = new bytes4[](1);
@@ -521,16 +521,14 @@ contract SessionKeyValidatorTest is Test {
 
         PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, sig85);
 
-        // Under the new 107-byte contract: 85 < 106 → VALIDATION_FAILED.
+        // 85 < 106 (new minimum length) → VALIDATION_FAILED.
         uint256 result = validator.validateUserOp(userOp, userOpHash);
-        assertEq(result, 1, "Scenario A: 85-byte sig fails new contract (Kernel does NOT strip)");
+        assertEq(result, 1, "Scenario A: 85-byte sig rejected by new 106-byte contract");
 
-        // Document: Kernel passes the FULL sig to the module — no stripping.
-        // See validateUserOp: minimum length is 106, session key at [21:41].
         (skv);
     }
 
-    /// @dev Scenario B — "Kernel does NOT strip — passes full 106-byte sig".
+    /// @dev Scenario B — correct 106-byte format: 0x01 + validatorAddr + sessionKeyAddr + ecdsaSig.
     ///      Calls validateUserOp with 0x01 + validatorAddr(20B) + sessionKeyAddr(20B) + ecdsaSig(65B).
     ///      Expected to PASS — this is the correct production format.
     ///      Note: 0x01(1B) + addr(20B) + addr(20B) + ecdsa(65B) = 106 bytes.
