@@ -23,6 +23,13 @@ coverage/
 
 # Foundry
 packages/contracts/cache/
+cache/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test artifacts
+apps/web/e2e/*.png
 
 # Worktrees
 .worktrees/
