@@ -110,7 +110,7 @@ The lint is configured in `Cargo.toml` but the compiler does not enforce it at t
 **`revokeSession()` must be whitelisted in VerifyingPaymaster.**
 `grantSession` reverts with `SessionAlreadyGranted` if a session is already active. The delegation flow calls `revokeSession()` first — its selector `0xc4605d8c` must be in the paymaster's allowed selectors or you get AA33. Already fixed in the current deployment.
 
-**Current paymaster address: `0x598a19bD8e9730b0b02aAc474D243F3045fe2B1a`** (whitelists: approve, grantSession, revokeSession, installValidations, openPosition, closePosition).
+**Current paymaster address: `0x59c4c78aB85d7428F1d0B9Fa972F6cE9131E33B2`** (whitelists: approve, faucet, grantSession, revokeSession, installValidations, openPosition, closePosition).
 
 **DataRunnerPage introduced a wrong digest formula and wrong nonce during the perps migration.**
 The correct signing flow lives in the pre-existing passkey pipeline. Any new page that sends transactions must go through that pipeline, not re-implement signing. See the `bugfix: passkey/session-key pipeline` commit for details.

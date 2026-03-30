@@ -933,4 +933,28 @@ contract VerifyingPaymasterTest is Test {
         );
         paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
     }
+
+    function testFuzz_ValidatePaymasterUserOp_Faucet(bytes4 sel, uint256 amount) public {
+        bytes4 faucetSelector = bytes4(keccak256("faucet(uint256)"));
+
+        bytes memory callData = abi.encodeWithSelector(sel, amount);
+        bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), callData);
+        bytes memory userOpCallData =
+            abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = userOpCallData;
+
+        vm.prank(entryPoint);
+
+        if (sel == faucetSelector) {
+            (, uint256 validationData) =
+                paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+            assertEq(validationData, 0);
+        } else {
+            vm.expectRevert();
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        }
+    }
 }

@@ -27,6 +27,10 @@ export function FaucetModal({ isOpen, onClose, onSuccess }: Props) {
     };
   }, [state, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) reset();
+  }, [isOpen, reset]);
+
   if (!isOpen) return null;
 
   return (
@@ -43,14 +47,12 @@ export function FaucetModal({ isOpen, onClose, onSuccess }: Props) {
         >
           Get 10,000 USDC
         </h2>
-        {state === "idle" && (
-          <p
-            id="faucet-modal-description"
-            className="mt-2 text-sm text-zinc-400"
-          >
-            Claim free testnet USDC to start trading.
-          </p>
-        )}
+        <p
+          id="faucet-modal-description"
+          className={`mt-2 text-sm text-zinc-400 ${state !== "idle" ? "sr-only" : ""}`}
+        >
+          Claim free testnet USDC to start trading.
+        </p>
 
         <div className="mt-8">
           {state === "idle" && (
