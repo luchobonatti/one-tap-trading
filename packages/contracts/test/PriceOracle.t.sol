@@ -37,7 +37,7 @@ contract PriceOracleTest is Test {
     }
 
     function test_StalePriceReverts() public {
-        // Move time forward by 6 seconds (beyond staleness threshold)
+        feed.setUpdatedAt(feedInitTime);
         vm.warp(feedInitTime + 6 seconds);
 
         vm.expectRevert(
@@ -47,7 +47,7 @@ contract PriceOracleTest is Test {
     }
 
     function test_PriceAtStalenessThresholdBoundary() public {
-        // Move exactly to the boundary (5 seconds) — still valid (not > 5s)
+        feed.setUpdatedAt(feedInitTime);
         vm.warp(feedInitTime + 5 seconds);
         (uint256 price, uint256 updatedAt) = oracle.getPrice();
         assertEq(price, INITIAL_PRICE);
@@ -55,6 +55,7 @@ contract PriceOracleTest is Test {
     }
 
     function test_PriceJustBeyondStalenessThresholdReverts() public {
+        feed.setUpdatedAt(feedInitTime);
         vm.warp(feedInitTime + 5 seconds + 1);
         vm.expectRevert(
             abi.encodeWithSelector(IPriceOracle.StalePrice.selector, feedInitTime, block.timestamp)
@@ -294,6 +295,7 @@ contract PriceOracleTest is Test {
     ///      Uses full abi.encodeWithSelector since StalePrice carries parameters.
     function testFuzz_StalenessCheck(uint256 age) public {
         age = bound(age, 0, 100 seconds);
+        feed.setUpdatedAt(feedInitTime);
         vm.warp(feedInitTime + age);
 
         if (age <= oracle.STALENESS_THRESHOLD()) {
