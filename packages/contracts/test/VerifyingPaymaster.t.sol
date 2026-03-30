@@ -892,4 +892,45 @@ contract VerifyingPaymasterTest is Test {
             )
         );
     }
+
+    // ─── validatePaymasterUserOp — faucet ──────────────────────────────────
+
+    function test_ValidatePaymasterUserOp_Faucet_Succeeds() public {
+        // faucet(uint256 amount) on mockUsdc — should pass without argument validation.
+        bytes4 faucetSelector = bytes4(keccak256("faucet(uint256)"));
+        bytes memory faucetData = abi.encodeWithSelector(faucetSelector, uint256(1000e6));
+        bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), faucetData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        (, uint256 validationData) =
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        assertEq(validationData, 0);
+    }
+
+    function test_ValidatePaymasterUserOp_NonFaucetMockUsdc_Reverts() public {
+        // transfer(address to, uint256 amount) on mockUsdc — should revert.
+        // Only approve() and faucet() are allowed on mockUsdc.
+        bytes4 transferSelector = bytes4(keccak256("transfer(address,uint256)"));
+        bytes memory transferData =
+            abi.encodeWithSelector(transferSelector, makeAddr("recipient"), uint256(100e6));
+        bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), transferData);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVerifyingPaymaster.SelectorNotAllowed.selector, transferSelector
+            )
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
 }
