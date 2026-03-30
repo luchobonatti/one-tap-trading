@@ -10,16 +10,21 @@ const STALE_AFTER_ERRORS = 3;
 
 export type UsePricePollingReturn = {
   priceRef: RefObject<bigint>;
+  price: bigint;
   stale: boolean;
 };
 
 export function usePricePolling(interval = 500, enabled = true): UsePricePollingReturn {
   const priceRef = useRef<bigint>(0n);
   const errorCount = useRef(0);
+  const [price, setPrice] = useState(0n);
   const [stale, setStale] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
+
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
@@ -29,6 +34,7 @@ export function usePricePolling(interval = 500, enabled = true): UsePricePolling
           functionName: "getPrice",
         });
         priceRef.current = price;
+        setPrice(price);
         if (errorCount.current >= STALE_AFTER_ERRORS) {
           setStale(false);
         }
@@ -38,13 +44,19 @@ export function usePricePolling(interval = 500, enabled = true): UsePricePolling
         if (errorCount.current === STALE_AFTER_ERRORS) {
           setStale(true);
         }
+      } finally {
+        if (!cancelled) {
+          timerId = setTimeout(() => void tick(), interval);
+        }
       }
     };
 
     void tick();
-    const id = setInterval(() => void tick(), interval);
-    return () => clearInterval(id);
+    return () => {
+      cancelled = true;
+      clearTimeout(timerId);
+    };
   }, [interval, enabled]);
 
-  return { priceRef, stale };
+  return { priceRef, price, stale };
 }

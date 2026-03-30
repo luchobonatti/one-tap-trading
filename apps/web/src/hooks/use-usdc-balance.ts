@@ -38,8 +38,9 @@ export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceRetu
     }
 
     let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
 
-    const fetchBalance = async () => {
+    const poll = async () => {
       try {
         const result = await publicClient.readContract({
           abi: BALANCE_OF_ABI,
@@ -51,17 +52,19 @@ export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceRetu
       } catch (err) {
         console.error("Failed to fetch USDC balance:", err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          timerId = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+        }
       }
     };
 
     setLoading(true);
-    void fetchBalance();
-    const id = setInterval(() => void fetchBalance(), POLL_INTERVAL_MS);
+    void poll();
 
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timerId);
     };
   }, [address]);
 
