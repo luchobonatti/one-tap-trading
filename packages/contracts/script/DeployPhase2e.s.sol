@@ -29,7 +29,11 @@ contract DeployPhase2e is Script {
 
     int256 private constant INITIAL_PRICE = 2_000e8;
 
+    error WrongChain(uint256 actual, uint256 expected);
+
     function run() external {
+        if (block.chainid != 6343) revert WrongChain(block.chainid, 6343);
+
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
@@ -61,11 +65,11 @@ contract DeployPhase2e is Script {
         PerpEngine engine = new PerpEngine(address(oracle), settlement, usdc);
         console.log("New PerpEngine:   ", address(engine));
 
-        Settlement(settlement).setEngine(address(engine));
-        console.log("Settlement.engine -> PerpEngine");
-
         VerifyingPaymaster(payable(paymaster)).setAllowedTarget(address(engine));
         console.log("Paymaster.allowedTarget -> PerpEngine");
+
+        Settlement(settlement).setEngine(address(engine));
+        console.log("Settlement.engine -> PerpEngine");
 
         vm.stopBroadcast();
 

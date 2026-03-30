@@ -9,13 +9,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../../.env"
+ENV_FILE="$SCRIPT_DIR/../.env"
 if [[ -f "$ENV_FILE" ]]; then
 	# shellcheck source=/dev/null
 	source "$ENV_FILE"
 fi
 
-FEED="0xd152AaBf6e4dA27004dC4a4B29da4a7754318469"
+FEED=$(grep '"MockPriceFeed"' "$SCRIPT_DIR/../deployments/6343.json" | grep -o '0x[a-fA-F0-9]*')
 INTERVAL=2
 
 echo "Keeper started — refreshing MockPriceFeed every ${INTERVAL}s. Ctrl-C to stop."

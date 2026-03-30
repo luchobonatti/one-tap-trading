@@ -28,21 +28,25 @@ export function usePricePolling(interval = 500, enabled = true): UsePricePolling
 
     const tick = async () => {
       try {
-        const [price] = await publicClient.readContract({
+        const [fetched] = await publicClient.readContract({
           abi: priceOracleAbi,
           address: PRICE_ORACLE,
           functionName: "getPrice",
         });
-        priceRef.current = price;
-        setPrice(price);
-        if (errorCount.current >= STALE_AFTER_ERRORS) {
-          setStale(false);
+        if (!cancelled) {
+          priceRef.current = fetched;
+          setPrice(fetched);
+          if (errorCount.current >= STALE_AFTER_ERRORS) {
+            setStale(false);
+          }
+          errorCount.current = 0;
         }
-        errorCount.current = 0;
       } catch {
-        errorCount.current += 1;
-        if (errorCount.current === STALE_AFTER_ERRORS) {
-          setStale(true);
+        if (!cancelled) {
+          errorCount.current += 1;
+          if (errorCount.current === STALE_AFTER_ERRORS) {
+            setStale(true);
+          }
         }
       } finally {
         if (!cancelled) {

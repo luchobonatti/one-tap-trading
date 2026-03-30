@@ -48,9 +48,13 @@ export function AccountHeader({ address, usdcBalance, price, stale }: Props) {
   }, [qrOpen]);
 
   const copyAddress = useCallback(async () => {
-    await navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable (non-https or permission denied) */
+    }
   }, [address]);
 
   const priceColor =
