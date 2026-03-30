@@ -18,20 +18,20 @@ export function DelegateModal({ session }: Props) {
   return (
     <dialog
       open
-      className="fixed inset-0 m-0 flex h-full w-full max-w-full items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] m-0 flex h-full w-full max-w-full items-center justify-center bg-black/70 backdrop-blur-sm"
       aria-labelledby="delegate-modal-title"
       aria-describedby="delegate-modal-description"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-8 shadow-2xl">
+      <div className="w-full max-w-sm rounded-2xl border border-[var(--color-neon-cyan)]/20 bg-[var(--color-space-bg)] p-8 shadow-[0_0_40px_var(--color-neon-cyan)/10]">
         <h2
           id="delegate-modal-title"
-          className="text-2xl font-bold text-white"
+          className="font-mono text-2xl font-bold text-[var(--color-neon-cyan)]"
         >
-          Enable Trading
+          {status === "expired" ? "Session Expired" : "Enable Trading"}
         </h2>
         <p
           id="delegate-modal-description"
-          className="mt-2 text-sm text-zinc-400"
+          className="mt-2 text-sm text-[var(--color-star-dim)]"
         >
           {status === "expired"
             ? "Your trading session expired. Renew to continue."
@@ -41,7 +41,7 @@ export function DelegateModal({ session }: Props) {
         <div className="mt-6">
           <label
             htmlFor="spend-limit"
-            className="block text-xs font-medium text-zinc-400"
+            className="block text-xs font-medium uppercase tracking-widest text-[var(--color-star-dim)]"
           >
             Spend limit (USDC)
           </label>
@@ -54,7 +54,7 @@ export function DelegateModal({ session }: Props) {
             value={spendLimit}
             onChange={(e) => setSpendLimit(e.target.value)}
             disabled={status === "delegating"}
-            className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-white/30 disabled:opacity-50"
+            className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-[var(--color-ui-text)] placeholder-[var(--color-star-dim)] focus:border-[var(--color-neon-cyan)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--color-neon-cyan)]/20 disabled:opacity-50"
           />
         </div>
 
@@ -63,25 +63,25 @@ export function DelegateModal({ session }: Props) {
             <button
               type="button"
               onClick={() => void delegate(spendLimit)}
-              className="w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 active:scale-95"
+              className="w-full rounded-xl border border-[var(--color-neon-cyan)]/60 px-4 py-3 font-mono text-sm font-semibold text-[var(--color-neon-cyan)] shadow-[0_0_16px_var(--color-neon-cyan)/20] transition hover:bg-[var(--color-neon-cyan)]/10 active:scale-95"
             >
-              {status === "expired" ? "Renew Session" : "Enable Trading"}
+              {status === "expired" ? "RENEW SESSION" : "ENABLE TRADING"}
             </button>
           )}
 
           {status === "delegating" && (
             <div className="space-y-3">
-              <div className="text-center text-sm text-zinc-400">
+              <p className="text-center font-mono text-xs text-[var(--color-star-dim)]">
                 Approve with your passkey — this is the last prompt for 4h…
-              </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-800">
-                <div className="h-full w-2/3 animate-pulse rounded-full bg-white/40" />
+              </p>
+              <div className="h-px w-full overflow-hidden rounded-full bg-white/5">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--color-neon-cyan)]/40" />
               </div>
             </div>
           )}
 
           {status === "error" && error !== undefined && (
-            <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            <p className="mt-3 rounded-lg border border-[var(--color-neon-red)]/20 bg-[var(--color-neon-red)]/5 px-3 py-2 font-mono text-xs text-[var(--color-neon-red)]">
               {error}
             </p>
           )}
