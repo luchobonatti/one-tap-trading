@@ -57,6 +57,9 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     ///         grantSession(), because grantSession reverts if a session is already active.
     bytes4 private constant REVOKE_SESSION_SELECTOR = bytes4(keccak256("revokeSession()"));
 
+    /// @notice Selector for MockUSDC faucet(uint256).
+    bytes4 private constant FAUCET_SELECTOR = bytes4(keccak256("faucet(uint256)"));
+
     /// @notice Default gas allowance per UserOperation.
     ///         MegaETH testnet gas runs ~30× higher than mainnet; observed delegation
     ///         maxCost for the approve+grantSession+installValidations batch is ~68.4 Gwei.
@@ -271,18 +274,23 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
                 revert SelectorNotAllowed(selector);
             }
         } else if (target == mockUsdc) {
-            if (selector != APPROVE_SELECTOR) revert SelectorNotAllowed(selector);
-            // approve(address spender, uint256 amount) — spender is ABI-encoded at offset 4.
-            // ABI-encoded address: right-aligned in a 32-byte slot → bottom 20 bytes.
-            if (callData.length < 36) revert SelectorNotAllowed(selector);
-            address spender;
-            assembly {
-                spender := and(
-                    mload(add(add(callData, 0x20), 4)),
-                    0xffffffffffffffffffffffffffffffffffffffff
-                )
+            if (selector == APPROVE_SELECTOR) {
+                // approve(address spender, uint256 amount): 4 + 32 + 32 = 68 bytes
+                if (callData.length != 68) revert SelectorNotAllowed(selector);
+                address spender;
+                assembly {
+                    spender := and(
+                        mload(add(add(callData, 0x20), 4)),
+                        0xffffffffffffffffffffffffffffffffffffffff
+                    )
+                }
+                if (spender != allowedTarget) revert TargetNotAllowed(spender);
+            } else if (selector == FAUCET_SELECTOR) {
+                // faucet(uint256 amount): 4 + 32 = 36 bytes
+                if (callData.length != 36) revert SelectorNotAllowed(selector);
+            } else {
+                revert SelectorNotAllowed(selector);
             }
-            if (spender != allowedTarget) revert TargetNotAllowed(spender);
         } else if (target == sessionKeyValidator) {
             if (selector == REVOKE_SESSION_SELECTOR) {
                 // revokeSession() takes no arguments — no further validation needed.

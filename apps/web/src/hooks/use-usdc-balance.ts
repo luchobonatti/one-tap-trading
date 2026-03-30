@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { formatUnits, type Address } from "viem";
 import { publicClient } from "@/lib/aa/client";
 import { mockUsdcAddress } from "@one-tap/shared-types";
@@ -24,11 +24,15 @@ export type UseUsdcBalanceReturn = {
   balance: bigint;
   formatted: string;
   loading: boolean;
+  refresh: () => void;
 };
 
 export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceReturn {
   const [balance, setBalance] = useState(0n);
   const [loading, setLoading] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
   useEffect(() => {
     if (address === undefined) {
@@ -66,8 +70,8 @@ export function useUsdcBalance(address: Address | undefined): UseUsdcBalanceRetu
       cancelled = true;
       clearTimeout(timerId);
     };
-  }, [address]);
+  }, [address, refreshTick]);
 
   const formatted = Number(formatUnits(balance, USDC_DECIMALS)).toFixed(2);
-  return { balance, formatted, loading };
+  return { balance, formatted, loading, refresh };
 }
