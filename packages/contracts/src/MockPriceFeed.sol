@@ -22,6 +22,6 @@ contract MockPriceFeed is IPriceFeed {
     }
 
     function latestAnswer() external view returns (int256 price, uint256 updatedAt) {
-        return (_price, _updatedAt);
+        return (_price, block.timestamp);
     }
 }
