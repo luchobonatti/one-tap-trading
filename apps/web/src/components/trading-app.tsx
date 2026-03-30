@@ -28,7 +28,7 @@ export function TradingApp() {
   const session = useSessionKey(account.isReady);
   const { priceRef, price, stale } = usePricePolling(500, account.isReady);
   const { entries, addEntry } = useTradeHistory();
-  const { formatted: usdcBalance } = useUsdcBalance(account.address);
+  const { formatted: usdcBalance, refresh } = useUsdcBalance(account.address);
   const canvasRef = useRef<GameCanvasHandle>(null);
 
   const [leverage, setLeverage] = useState(DEFAULT_LEVERAGE);
@@ -90,6 +90,7 @@ export function TradingApp() {
           usdcBalance={usdcBalance}
           price={price}
           stale={stale}
+          refresh={refresh}
         />
       )}
 
