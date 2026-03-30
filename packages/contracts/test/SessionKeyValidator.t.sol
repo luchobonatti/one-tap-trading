@@ -98,15 +98,18 @@ contract SessionKeyValidatorTest is Test {
         });
     }
 
-    /// @dev Create a valid UserOp signature (Kernel v3 format) for validateUserOp.
-    ///      Format: mode(0x00) + sessionKeyAddress(20B) + ecdsaSig(65B) = 86 bytes.
+    /// @dev Create a valid UserOp signature (Kernel v3.1 SECONDARY mode) for validateUserOp.
+    ///      Format: mode(0x01) + validatorAddress(20B) + sessionKeyAddress(20B) + ecdsaSig(65B)
+    ///      = 106 bytes total.
+    ///      Diagnostic result: Kernel does NOT strip — validator receives the full 106-byte sig.
     function _createSignature(bytes32 userOpHash) internal view returns (bytes memory) {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
         bytes memory ecdsaSig = abi.encodePacked(r, s, v);
-        // Kernel v3 signature: mode(0x00) + sessionKey(20B) + ecdsaSig(65B) = 86 bytes
-        return abi.encodePacked(bytes1(0x00), sessionKey, ecdsaSig);
+        // Kernel v3.1 SECONDARY validator signature:
+        //   mode(0x01) + validatorAddr(20B) + sessionKey(20B) + ecdsaSig(65B) = 106 bytes
+        return abi.encodePacked(bytes1(0x01), address(validator), sessionKey, ecdsaSig);
     }
 
     /// @dev Create an ERC-1271 signature for isValidSignatureWithSender (no mode byte).
@@ -275,7 +278,9 @@ contract SessionKeyValidatorTest is Test {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKeyPriv, ethSignedHash);
-        bytes memory wrongSig = abi.encodePacked(bytes1(0x00), wrongKey, abi.encodePacked(r, s, v));
+        // New 106-byte format: mode(0x01) + validatorAddr(20B) + wrongKey(20B) + ecdsaSig(65B)
+        bytes memory wrongSig =
+            abi.encodePacked(bytes1(0x01), address(validator), wrongKey, abi.encodePacked(r, s, v));
 
         bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
         PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, wrongSig);
@@ -357,7 +362,10 @@ contract SessionKeyValidatorTest is Test {
         bytes32 ethSignedHash =
             keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(otherPriv, ethSignedHash);
-        bytes memory badSig = abi.encodePacked(bytes1(0x00), sessionKey, abi.encodePacked(r, s, v));
+        // New 106-byte format: correct sessionKey addr but wrong ECDSA private key.
+        bytes memory badSig = abi.encodePacked(
+            bytes1(0x01), address(validator), sessionKey, abi.encodePacked(r, s, v)
+        );
 
         PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, badSig);
         uint256 result = validator.validateUserOp(userOp, userOpHash);
@@ -471,6 +479,87 @@ contract SessionKeyValidatorTest is Test {
         assertFalse(validator.isModuleType(0));
         assertFalse(validator.isModuleType(2));
         assertFalse(validator.isModuleType(999));
+    }
+
+    // ─── Diagnostic Tests: Kernel Signature Stripping Behaviour ─────────────
+    //
+    // These tests answer: does Kernel v3.1 pass the full 106-byte signature to
+    // validateUserOp, or does it strip the 21-byte prefix first (leaving 85 bytes)?
+    //
+    // ERC-7579 specifies that the module receives the full validator-specific data
+    // without modification (Kernel does NOT strip).  Scenario B (106-byte) should
+    // pass; Scenario A (85-byte, stripped) should fail under the new format.
+    //
+    // Result: Scenario B passes → contract must read sessionKey from [21:41] and
+    // ecdsaSig from [41:106].
+    // Byte count: 0x01(1) + validatorAddr(20) + sessionKeyAddr(20) + ecdsaSig(65) = 106.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @dev Scenario A — "Kernel strips the 21-byte prefix".
+    ///      Calls validateUserOp directly with an 85-byte sig (sessionKeyAddr + ecdsaSig).
+    ///      Expected to FAIL under the new 106-byte format (proves Kernel does NOT strip).
+    function test_Diagnostic_NewSig_DirectCallScenarioA() public {
+        address skv = address(validator);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
+        bytes32 userOpHash = keccak256("diagnostic_a");
+
+        // 85-byte sig: no mode byte, no validator addr — what validator would see if
+        // Kernel stripped the 21-byte prefix.
+        bytes32 ethSignedHash =
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
+        bytes memory ecdsaSig = abi.encodePacked(r, s, v);
+        bytes memory sig85 = abi.encodePacked(sessionKey, ecdsaSig); // 20 + 65 = 85 bytes
+        assertEq(sig85.length, 85, "Scenario A sig must be 85 bytes");
+
+        PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, sig85);
+
+        // Under the new 107-byte contract: 85 < 106 → VALIDATION_FAILED.
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 1, "Scenario A: 85-byte sig fails new contract (Kernel does NOT strip)");
+
+        // Document: Kernel passes the FULL sig to the module — no stripping.
+        // See validateUserOp: minimum length is 106, session key at [21:41].
+        (skv);
+    }
+
+    /// @dev Scenario B — "Kernel does NOT strip — passes full 106-byte sig".
+    ///      Calls validateUserOp with 0x01 + validatorAddr(20B) + sessionKeyAddr(20B) + ecdsaSig(65B).
+    ///      Expected to PASS — this is the correct production format.
+    ///      Note: 0x01(1B) + addr(20B) + addr(20B) + ecdsa(65B) = 106 bytes.
+    function test_Diagnostic_NewSig_DirectCallScenarioB() public {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = OPEN_POSITION_SELECTOR;
+        vm.prank(owner);
+        validator.grantSession(
+            sessionKey, uint48(block.timestamp + 1 days), perpEngine, selectors, 10_000e6
+        );
+
+        bytes memory callData = _createOpenPositionCalldata(true, 1_000e6, 10);
+        bytes32 userOpHash = keccak256("diagnostic_b");
+
+        // 106-byte sig: 0x01 + SKV address (20B) + sessionKey address (20B) + ecdsaSig (65B)
+        // 1 + 20 + 20 + 65 = 106 bytes total.
+        bytes32 ethSignedHash =
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(sessionKeyPrivKey, ethSignedHash);
+        bytes memory ecdsaSig = abi.encodePacked(r, s, v);
+        address validatorAddr = address(validator);
+        bytes memory sig106 = abi.encodePacked(bytes1(0x01), validatorAddr, sessionKey, ecdsaSig);
+        assertEq(sig106.length, 106, "Scenario B sig must be 106 bytes");
+
+        PackedUserOperation memory userOp = _createPackedUserOp(owner, callData, sig106);
+
+        // Under the new contract: sessionKey read from [21:41], ecdsaSig from [41:106].
+        uint256 result = validator.validateUserOp(userOp, userOpHash);
+        assertEq(result, 0, "Scenario B: 106-byte sig succeeds (confirmed production format)");
     }
 
     // ─── Fuzz Tests ───────────────────────────────────────────────────────────

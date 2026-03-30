@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildKernelCallData } from "@/lib/aa/signer";
+import { buildKernelCallData, STUB_SESSION_SIGNATURE } from "@/lib/aa/signer";
 import {
   OPEN_POSITION_SELECTOR,
   CLOSE_POSITION_SELECTOR,
@@ -29,6 +29,17 @@ describe("buildKernelCallData", () => {
       "0xabcdef" as `0x${string}`,
     );
     expect(result.toLowerCase()).toContain(target.slice(2).toLowerCase());
+  });
+});
+
+describe("STUB_SESSION_SIGNATURE", () => {
+  it("is exactly 106 bytes (mode 0x01 + validatorAddr 20B + sessionKeyAddr 20B + ecdsaSig 65B)", () => {
+    const byteLength = (STUB_SESSION_SIGNATURE.length - 2) / 2;
+    expect(byteLength).toBe(106);
+  });
+
+  it("starts with mode byte 0x01 (Kernel v3.1 SECONDARY validator)", () => {
+    expect(STUB_SESSION_SIGNATURE.slice(0, 4)).toBe("0x01");
   });
 });
 

@@ -43,9 +43,15 @@ const GET_NONCE_ABI = [
   },
 ] as const;
 
-const STUB_SESSION_SIGNATURE = concat([
-  "0x0000000000000000000000000000000000000000",
-  "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+// Kernel v3.1 SECONDARY validator signature stub for gas estimation.
+// Format: mode(0x01) + validatorAddress(20B) + sessionKeyAddress(20B) + ecdsaSig(65B)
+// = 1 + 20 + 20 + 65 = 106 bytes total.
+// Both addresses are zero-padded placeholders; ecdsaSig is 65 zero bytes.
+export const STUB_SESSION_SIGNATURE = concat([
+  "0x01",
+  "0x0000000000000000000000000000000000000000", // validatorAddress placeholder (20B)
+  "0x0000000000000000000000000000000000000000", // sessionKeyAddress placeholder (20B)
+  `0x${"00".repeat(65)}`, // ecdsaSig placeholder (65B)
 ]) as Hex;
 
 export function buildKernelCallData(target: Address, innerCallData: Hex): Hex {
@@ -132,8 +138,8 @@ export async function signUserOp(
     message: { raw: userOpHash },
   });
 
-  // Kernel v3 signature format: validatorMode(0x00=DEFAULT) + validatorAddress + ecdsaSig
-  const signature = concat(["0x00", session.address, ecdsaSig]) as Hex;
+  // Kernel v3.1 SECONDARY mode: 0x01 + validatorAddr(20B) + sessionKeyAddr(20B) + ecdsaSig(65B)
+  const signature = concat(["0x01", session.validatorAddress, session.address, ecdsaSig]) as Hex;
   return { ...userOp, signature };
 }
 
