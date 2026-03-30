@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { Address } from "viem";
+import { megaEthCarrot } from "@/lib/aa/chain";
 
 const PRICE_DECIMALS = 8;
 
@@ -115,7 +116,7 @@ export function AccountHeader({ address, usdcBalance, price, stale }: Props) {
                 {address}
               </p>
               <a
-                href={`https://www.megaexplorer.xyz/address/${address}`}
+                href={`${megaEthCarrot.blockExplorers.default.url}/address/${address}`}
                 target="_blank"
                 rel="noreferrer"
                 className="mb-3 block text-center text-[10px] text-[var(--color-neon-cyan)] hover:underline"
