@@ -25,6 +25,7 @@ contract DeployPhase2f is Script {
     using stdJson for string;
 
     address private constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    uint256 private constant INITIAL_DEPOSIT = 0.05 ether;
 
     error WrongChain(uint256 actual, uint256 expected);
 
@@ -56,6 +57,9 @@ contract DeployPhase2f is Script {
         VerifyingPaymaster paymaster =
             new VerifyingPaymaster(ENTRY_POINT, perpEngine, usdc, skv, deployer);
         console.log("New VerifyingPaymaster:", address(paymaster));
+
+        paymaster.deposit{ value: INITIAL_DEPOSIT }();
+        console.log("EntryPoint deposit:    ", INITIAL_DEPOSIT);
 
         vm.stopBroadcast();
 
