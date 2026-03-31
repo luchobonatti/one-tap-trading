@@ -31,8 +31,10 @@ contract RedStoneAdapter is IPriceFeed {
     }
 
     function latestAnswer() external view override returns (int256 price, uint256 updatedAt) {
-        uint256 updatedAtNs;
-        (, price,, updatedAtNs,) = feed.latestRoundData();
-        updatedAt = updatedAtNs / 1_000_000;
+        uint256 updatedAtUs;
+        // roundId, startedAt, answeredInRound are unused — only answer and updatedAt matter.
+        // slither-disable-next-line unused-return
+        (, price,, updatedAtUs,) = feed.latestRoundData();
+        updatedAt = updatedAtUs / 1_000_000;
     }
 }
