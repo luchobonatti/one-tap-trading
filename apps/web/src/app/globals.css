@@ -15,6 +15,51 @@ body {
   color: var(--color-ui-text);
 }
 
+input[type="range"].fuel-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].fuel-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-star-dim);
+}
+
+input[type="range"].fuel-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-neon-cyan);
+  margin-top: -5px;
+  box-shadow: 0 0 8px var(--color-neon-cyan);
+}
+
+input[type="range"].fuel-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-star-dim);
+}
+
+input[type="range"].fuel-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-neon-cyan);
+  box-shadow: 0 0 8px var(--color-neon-cyan);
+}
+
+input[type="range"].fuel-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-neon-cyan);
+}
+
 @keyframes ship-flyby {
   0%   { transform: translateX(-80px); opacity: 0; }
   10%  { opacity: 1; }

@@ -27,7 +27,7 @@ export function FuelGauge({ value, onChange }: Props) {
         step={1}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1.5 w-24 cursor-pointer appearance-none rounded-full accent-[var(--color-neon-cyan)]"
+        className="fuel-slider w-24"
         aria-label={`Leverage ${value}x`}
       />
       <span
