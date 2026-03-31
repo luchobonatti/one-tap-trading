@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSmartAccount } from "@/hooks/use-smart-account";
 import { useSessionKey } from "@/hooks/use-session-key";
@@ -34,6 +34,18 @@ export function TradingApp() {
   const [leverage, setLeverage] = useState(DEFAULT_LEVERAGE);
   const [tradeStatus, setTradeStatus] = useState<"idle" | "pending">("idle");
   const [tradeError, setTradeError] = useState<string | undefined>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (drawerRef.current !== null && !drawerRef.current.contains(e.target as Node)) {
+        setDrawerOpen(false);
+      }
+    }
+    if (drawerOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [drawerOpen]);
 
   const isReady = account.isReady && session.isReady;
   const isPending = tradeStatus === "pending";
@@ -94,37 +106,68 @@ export function TradingApp() {
       )}
 
       {isReady && (
-        <div className="relative z-10 flex h-full flex-col items-center justify-end gap-4 pb-8 pt-10">
+        <>
+          <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/5 bg-[var(--color-space-bg)]/90 backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-4 px-4 py-3">
+              <LongShortButtons disabled={isPending} onClick={(dir) => void handleTrade(dir)} />
 
-          <div className="flex flex-col items-center gap-6 rounded-2xl border border-white/10 bg-[var(--color-space-bg)]/80 p-6 backdrop-blur-sm">
-            <FuelGauge value={leverage} onChange={setLeverage} />
-            <LongShortButtons disabled={isPending} onClick={(dir) => void handleTrade(dir)} />
+              <div className="h-6 w-px bg-white/10" />
 
-            {tradeError !== undefined && (
-              <p className="text-xs text-[var(--color-neon-red)]">{tradeError}</p>
-            )}
+              <FuelGauge value={leverage} onChange={setLeverage} />
 
-            <p className="text-xs text-[var(--color-star-dim)]">
-              Session expires {session.expiresAt?.toLocaleTimeString()} ·{" "}
+              <div className="h-6 w-px bg-white/10" />
+
+              <p className="font-mono text-[10px] text-[var(--color-star-dim)]">
+                {session.expiresAt?.toLocaleTimeString()} ·{" "}
+                <button
+                  type="button"
+                  className="underline transition hover:text-white"
+                  onClick={() => session.revoke()}
+                >
+                  revoke
+                </button>
+              </p>
+
+              <div className="h-6 w-px bg-white/10" />
+
               <button
                 type="button"
-                className="underline hover:text-white transition"
-                onClick={() => session.revoke()}
+                onClick={() => setDrawerOpen((v) => !v)}
+                className={[
+                  "rounded-lg border px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest transition",
+                  drawerOpen
+                    ? "border-[var(--color-neon-cyan)]/60 text-[var(--color-neon-cyan)]"
+                    : "border-white/10 text-[var(--color-star-dim)] hover:border-white/30 hover:text-white",
+                ].join(" ")}
               >
-                revoke
+                Positions
               </button>
-            </p>
+            </div>
+
+            {tradeError !== undefined && (
+              <p className="px-4 pb-2 text-center font-mono text-[10px] text-[var(--color-neon-red)]">
+                {tradeError}
+              </p>
+            )}
           </div>
 
-          <div className="w-full max-w-sm space-y-2 px-4">
-            <PositionsPanel
-              accountAddress={account.address}
-              priceRef={priceRef}
-              onTradeClose={addEntry}
-            />
-            <TradeHistory entries={entries} />
+          <div
+            ref={drawerRef}
+            className={[
+              "absolute right-0 top-0 bottom-0 z-30 w-80 border-l border-white/5 bg-[var(--color-space-bg)]/95 backdrop-blur-md transition-transform duration-300",
+              drawerOpen ? "translate-x-0" : "translate-x-full",
+            ].join(" ")}
+          >
+            <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 pt-16 pb-20">
+              <PositionsPanel
+                accountAddress={account.address}
+                priceRef={priceRef}
+                onTradeClose={addEntry}
+              />
+              <TradeHistory entries={entries} />
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
