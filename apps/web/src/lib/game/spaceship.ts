@@ -61,7 +61,7 @@ export function updateSpaceship(ship: Spaceship, delta: number): void {
   ship.tick += delta;
 
   const bob = Math.sin((ship.tick * BOB_HZ * Math.PI * 2) / 60) * BOB_AMPLITUDE;
-  ship.container.y += (ship.targetY + bob - ship.container.y) * LERP_FACTOR;
+  ship.container.y += bob * 0.1;
 
   if (ship.bankFrames > 0) {
     ship.bankFrames -= delta;

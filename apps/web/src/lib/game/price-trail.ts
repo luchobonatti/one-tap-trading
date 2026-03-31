@@ -9,6 +9,7 @@ const ALPHA_OLDEST = 0.1;
 const HEADER_HEIGHT = 44;
 const BOTTOM_PAD_RATIO = 0.1;
 const SPLINE_TENSION = 0.3;
+const EMA_ALPHA = 0.15;
 
 export type PriceTrail = {
   buffer: Float64Array;
@@ -16,6 +17,7 @@ export type PriceTrail = {
   count: number;
   graphics: Graphics;
   lastY: number;
+  ema: number;
 };
 
 export function createPriceTrail(stage: { addChild: (g: Graphics) => void }): PriceTrail {
@@ -29,13 +31,22 @@ export function createPriceTrail(stage: { addChild: (g: Graphics) => void }): Pr
     count: 0,
     graphics,
     lastY: 0,
+    ema: 0,
   };
 }
 
 export function pushPrice(trail: PriceTrail, price: bigint): void {
-  trail.buffer[trail.head] = Number(price);
+  const raw = Number(price);
+  const smoothed = trail.ema === 0 ? raw : trail.ema + EMA_ALPHA * (raw - trail.ema);
+  trail.ema = smoothed;
+
+  trail.buffer[trail.head] = smoothed;
   trail.head = (trail.head + 1) % BUFFER_SIZE;
   if (trail.count < BUFFER_SIZE) trail.count++;
+}
+
+function clamp(value: number, lo: number, hi: number): number {
+  return value < lo ? lo : value > hi ? hi : value;
 }
 
 export function drawPriceTrail(
@@ -59,6 +70,8 @@ export function drawPriceTrail(
   const padTop = HEADER_HEIGHT + 16;
   const padBottom = height * BOTTOM_PAD_RATIO;
   const drawH = height - padTop - padBottom;
+  const yMin = padTop;
+  const yMax = padTop + drawH;
 
   const xs: number[] = [];
   const ys: number[] = [];
@@ -67,7 +80,7 @@ export function drawPriceTrail(
     const idx = (trail.head - trail.count + i + BUFFER_SIZE) % BUFFER_SIZE;
     const val = trail.buffer[idx] ?? min;
     xs.push((i / (trail.count - 1)) * width);
-    ys.push(padTop + drawH - ((val - min) / range) * drawH);
+    ys.push(clamp(padTop + drawH - ((val - min) / range) * drawH, yMin, yMax));
   }
 
   trail.graphics.clear();
@@ -86,9 +99,9 @@ export function drawPriceTrail(
     const yNext = i + 2 < trail.count ? (ys[i + 2] ?? y1) : y1;
 
     const cp1x = x0 + (x1 - xPrev) * SPLINE_TENSION;
-    const cp1y = y0 + (y1 - yPrev) * SPLINE_TENSION;
+    const cp1y = clamp(y0 + (y1 - yPrev) * SPLINE_TENSION, yMin, yMax);
     const cp2x = x1 - (xNext - x0) * SPLINE_TENSION;
-    const cp2y = y1 - (yNext - y0) * SPLINE_TENSION;
+    const cp2y = clamp(y1 - (yNext - y0) * SPLINE_TENSION, yMin, yMax);
 
     const alpha = ALPHA_OLDEST + (ALPHA_NEWEST - ALPHA_OLDEST) * ((i + 1) / trail.count);
 

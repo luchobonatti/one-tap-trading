@@ -81,7 +81,7 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
         const { Application } = await import("pixi.js");
         if (cancelled) return;
         const { createStarfield, updateStarfield } = await import("@/lib/game/starfield");
-        const { createSpaceship, updateSpaceship, setSpaceshipTargetY } = await import("@/lib/game/spaceship");
+        const { createSpaceship, updateSpaceship, bankSpaceship } = await import("@/lib/game/spaceship");
         const { createPriceTrail, pushPrice, drawPriceTrail } = await import("@/lib/game/price-trail");
         const { warpFlash } = await import("@/lib/game/trade-effects");
         if (cancelled) return;
@@ -155,7 +155,12 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           updateStarfield(state.starLayers, ticker.deltaTime, state.warping, width);
           drawPriceTrail(state.trail, width / 2, height);
           if (state.trail.lastY !== 0) {
-            setSpaceshipTargetY(ship, state.trail.lastY);
+            const prevY = ship.container.y;
+            ship.container.y = state.trail.lastY;
+            const diff = state.trail.lastY - prevY;
+            if (Math.abs(diff) > 2) {
+              bankSpaceship(ship, diff < 0 ? "up" : "down");
+            }
           }
           updateSpaceship(state.ship, ticker.deltaTime);
         };
