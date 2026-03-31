@@ -762,15 +762,49 @@ contract VerifyingPaymasterTest is Test {
         paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
     }
 
-    function test_ValidatePaymasterUserOp_InstallModule_Reverts() public {
-        // Regression: ERC-7579 installModule(uint256,address,bytes) must be rejected.
-        // Kernel v3.1 uses installValidations — accepting installModule would allow
-        // an attacker to sponsor arbitrary module installations.
+    function test_ValidatePaymasterUserOp_InstallModule_ValidatorSKV_Succeeds() public {
         bytes4 installModuleSelector = bytes4(keccak256("installModule(uint256,address,bytes)"));
-        bytes memory badCallData = abi.encodeWithSelector(
+        bytes memory callDataInner = abi.encodeWithSelector(
             installModuleSelector, uint256(1), sessionKeyValidator, bytes("")
         );
-        bytes memory execCalldata = abi.encodePacked(user, uint256(0), badCallData);
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), callDataInner);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        (, uint256 validationData) =
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        assertEq(validationData, 0);
+    }
+
+    function test_ValidatePaymasterUserOp_InstallModule_WrongModule_Reverts() public {
+        bytes4 installModuleSelector = bytes4(keccak256("installModule(uint256,address,bytes)"));
+        address maliciousModule = makeAddr("malicious");
+        bytes memory callDataInner =
+            abi.encodeWithSelector(installModuleSelector, uint256(1), maliciousModule, bytes(""));
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), callDataInner);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        vm.prank(entryPoint);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, maliciousModule)
+        );
+        paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+    }
+
+    function test_ValidatePaymasterUserOp_InstallModule_WrongModuleType_Reverts() public {
+        bytes4 installModuleSelector = bytes4(keccak256("installModule(uint256,address,bytes)"));
+        bytes memory callDataInner = abi.encodeWithSelector(
+            installModuleSelector, uint256(2), sessionKeyValidator, bytes("")
+        );
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), callDataInner);
         bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
 
         PackedUserOperation memory userOp;
