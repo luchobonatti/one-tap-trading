@@ -7,7 +7,7 @@ const GLOW_OUTER_STRENGTH = 3;
 const ALPHA_NEWEST = 0.9;
 const ALPHA_OLDEST = 0.1;
 const HEADER_HEIGHT = 44;
-const BOTTOM_PAD_RATIO = 0.1;
+const FOOTER_HEIGHT = 56;
 const SPLINE_TENSION = 0.3;
 const EMA_ALPHA = 0.15;
 
@@ -68,7 +68,7 @@ export function drawPriceTrail(
 
   const range = max - min || 1;
   const padTop = HEADER_HEIGHT + 16;
-  const padBottom = height * BOTTOM_PAD_RATIO;
+  const padBottom = FOOTER_HEIGHT + 16;
   const drawH = height - padTop - padBottom;
   const yMin = padTop;
   const yMax = padTop + drawH;

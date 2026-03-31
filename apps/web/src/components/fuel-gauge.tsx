@@ -15,21 +15,10 @@ export function FuelGauge({ value, onChange }: Props) {
   const isMax = value === MAX;
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <label htmlFor={id} className="text-xs uppercase tracking-widest text-[var(--color-star-dim)]">
+    <div className="flex items-center gap-3">
+      <label htmlFor={id} className="text-[10px] uppercase tracking-widest text-[var(--color-star-dim)]">
         Fuel
       </label>
-      <span
-        className={[
-          "font-mono text-3xl font-bold tabular-nums",
-          isMax
-            ? "animate-pulse text-[var(--color-neon-orange)]"
-            : "text-[var(--color-neon-cyan)]",
-        ].join(" ")}
-        aria-live="polite"
-      >
-        {value}×
-      </span>
       <input
         id={id}
         type="range"
@@ -38,9 +27,20 @@ export function FuelGauge({ value, onChange }: Props) {
         step={1}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-2 w-40 cursor-pointer appearance-none rounded-full accent-[var(--color-neon-cyan)]"
+        className="h-1.5 w-24 cursor-pointer appearance-none rounded-full accent-[var(--color-neon-cyan)]"
         aria-label={`Leverage ${value}x`}
       />
+      <span
+        className={[
+          "font-mono text-sm font-bold tabular-nums",
+          isMax
+            ? "animate-pulse text-[var(--color-neon-orange)]"
+            : "text-[var(--color-neon-cyan)]",
+        ].join(" ")}
+        aria-live="polite"
+      >
+        {value}×
+      </span>
     </div>
   );
 }

@@ -94,29 +94,37 @@ export function TradingApp() {
       )}
 
       {isReady && (
-        <div className="relative z-10 flex h-full flex-col items-center justify-end gap-4 pb-8 pt-10">
+        <>
+          <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/5 bg-[var(--color-space-bg)]/90 backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-4 px-4 py-3">
+              <LongShortButtons disabled={isPending} onClick={(dir) => void handleTrade(dir)} />
 
-          <div className="flex flex-col items-center gap-6 rounded-2xl border border-white/10 bg-[var(--color-space-bg)]/80 p-6 backdrop-blur-sm">
-            <FuelGauge value={leverage} onChange={setLeverage} />
-            <LongShortButtons disabled={isPending} onClick={(dir) => void handleTrade(dir)} />
+              <div className="h-6 w-px bg-white/10" />
+
+              <FuelGauge value={leverage} onChange={setLeverage} />
+
+              <div className="h-6 w-px bg-white/10" />
+
+              <p className="font-mono text-[10px] text-[var(--color-star-dim)]">
+                {session.expiresAt?.toLocaleTimeString()} ·{" "}
+                <button
+                  type="button"
+                  className="underline transition hover:text-white"
+                  onClick={() => session.revoke()}
+                >
+                  revoke
+                </button>
+              </p>
+            </div>
 
             {tradeError !== undefined && (
-              <p className="text-xs text-[var(--color-neon-red)]">{tradeError}</p>
+              <p className="px-4 pb-2 text-center font-mono text-[10px] text-[var(--color-neon-red)]">
+                {tradeError}
+              </p>
             )}
-
-            <p className="text-xs text-[var(--color-star-dim)]">
-              Session expires {session.expiresAt?.toLocaleTimeString()} ·{" "}
-              <button
-                type="button"
-                className="underline hover:text-white transition"
-                onClick={() => session.revoke()}
-              >
-                revoke
-              </button>
-            </p>
           </div>
 
-          <div className="w-full max-w-sm space-y-2 px-4">
+          <div className="absolute bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 space-y-2 px-4">
             <PositionsPanel
               accountAddress={account.address}
               priceRef={priceRef}
@@ -124,7 +132,7 @@ export function TradingApp() {
             />
             <TradeHistory entries={entries} />
           </div>
-        </div>
+        </>
       )}
     </div>
   );
