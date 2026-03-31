@@ -1,10 +1,11 @@
 {
   "MockUSDC": "0xbd2e92b39081a9dc541a776b5d7b7e0051851ccb",
   "MockPriceFeed": "0x85f5dc082ca674f5421fe93e106022a2a1ba1a30",
-  "PriceOracle": "0xb496e3d6bccbf7768774d34bbd71dfe28e2de619",
+  "PriceOracle": "0xf5e08914893f87f687f6f39799C32Ed2210f410A",
   "Settlement": "0x24354d1022e13f39f330bbf2210edeed21422ed5",
-  "PerpEngine": "0x37e70d042d21425b36bf716609788fd9de6d460c",
+  "PerpEngine": "0x3B94b364697714620c4596E1C51E5b24A0964204",
   "deployer": "0xa69266094eb956a59a32c5f78e8a3faf3ad8adcd",
   "SessionKeyValidator": "0xb5ea8abff1bd18ceb9ee5b40a55d832bbb5d1b44",
-  "VerifyingPaymaster": "0xE13998047B0b13AD9Df7672E28Bc4b5CEaA00C35"
+  "VerifyingPaymaster": "0xE13998047B0b13AD9Df7672E28Bc4b5CEaA00C35",
+  "RedStoneAdapter": "0x3812e928c1d55De3707C93d8bC74026a3249134D"
 }

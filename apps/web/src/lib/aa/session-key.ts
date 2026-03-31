@@ -60,8 +60,8 @@ const INSTALL_MODULE_ABI = [
 // Bump the version whenever the stored shape changes so old entries are
 // automatically discarded on load.  This also invalidates any session that was
 // delegated against a now-redeployed SessionKeyValidator.
-const STORAGE_KEY = "ott-session-key-v5";
-const LEGACY_KEYS = ["ott-session-key-v1", "ott-session-key-v2", "ott-session-key-v3", "ott-session-key-v4"] as const;
+const STORAGE_KEY = "ott-session-key-v6";
+const LEGACY_KEYS = ["ott-session-key-v1", "ott-session-key-v2", "ott-session-key-v3", "ott-session-key-v4", "ott-session-key-v5"] as const;
 const VALID_DURATION_SECONDS = 4 * 3600;
 
 // Correct selectors derived from keccak256 of full function signatures.
