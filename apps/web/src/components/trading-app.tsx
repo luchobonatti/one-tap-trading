@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSmartAccount } from "@/hooks/use-smart-account";
 import { useSessionKey } from "@/hooks/use-session-key";
@@ -34,6 +34,18 @@ export function TradingApp() {
   const [leverage, setLeverage] = useState(DEFAULT_LEVERAGE);
   const [tradeStatus, setTradeStatus] = useState<"idle" | "pending">("idle");
   const [tradeError, setTradeError] = useState<string | undefined>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (drawerRef.current !== null && !drawerRef.current.contains(e.target as Node)) {
+        setDrawerOpen(false);
+      }
+    }
+    if (drawerOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [drawerOpen]);
 
   const isReady = account.isReady && session.isReady;
   const isPending = tradeStatus === "pending";
@@ -115,6 +127,21 @@ export function TradingApp() {
                   revoke
                 </button>
               </p>
+
+              <div className="h-6 w-px bg-white/10" />
+
+              <button
+                type="button"
+                onClick={() => setDrawerOpen((v) => !v)}
+                className={[
+                  "rounded-lg border px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest transition",
+                  drawerOpen
+                    ? "border-[var(--color-neon-cyan)]/60 text-[var(--color-neon-cyan)]"
+                    : "border-white/10 text-[var(--color-star-dim)] hover:border-white/30 hover:text-white",
+                ].join(" ")}
+              >
+                Positions
+              </button>
             </div>
 
             {tradeError !== undefined && (
@@ -124,13 +151,21 @@ export function TradingApp() {
             )}
           </div>
 
-          <div className="absolute bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 space-y-2 px-4">
-            <PositionsPanel
-              accountAddress={account.address}
-              priceRef={priceRef}
-              onTradeClose={addEntry}
-            />
-            <TradeHistory entries={entries} />
+          <div
+            ref={drawerRef}
+            className={[
+              "absolute right-0 top-0 bottom-0 z-30 w-80 border-l border-white/5 bg-[var(--color-space-bg)]/95 backdrop-blur-md transition-transform duration-300",
+              drawerOpen ? "translate-x-0" : "translate-x-full",
+            ].join(" ")}
+          >
+            <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 pt-16 pb-20">
+              <PositionsPanel
+                accountAddress={account.address}
+                priceRef={priceRef}
+                onTradeClose={addEntry}
+              />
+              <TradeHistory entries={entries} />
+            </div>
           </div>
         </>
       )}
