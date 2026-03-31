@@ -122,6 +122,8 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           if (entry === undefined) return;
           const { width, height } = entry.contentRect;
           app.renderer.resize(width, height);
+          const state = stateRef.current;
+          if (state !== null) state.ship.container.x = width / 2;
         });
         ro.observe(canvas);
 
@@ -181,7 +183,7 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           const { width, height } = app.screen;
           updateStarfield(state.starLayers, ticker.deltaTime, state.warping, width);
           updateSpaceship(state.ship, ticker.deltaTime);
-          drawPriceTrail(state.trail, width, height);
+          drawPriceTrail(state.trail, width / 2, height);
         };
         app.ticker.add(gameTickerCb);
       };

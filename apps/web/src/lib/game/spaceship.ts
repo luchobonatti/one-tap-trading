@@ -8,7 +8,7 @@ const BANK_RETURN_FRAMES = 30;
 const BOB_AMPLITUDE = 3;
 const BOB_HZ = 0.8;
 const TRAIL_PARTICLES_PER_FRAME = 5;
-const SHIP_X_RATIO = 0.25;
+const SHIP_X_RATIO = 0.5;
 
 export type Spaceship = {
   container: Container;
