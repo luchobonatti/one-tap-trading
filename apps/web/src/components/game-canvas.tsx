@@ -81,7 +81,7 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
         const { Application } = await import("pixi.js");
         if (cancelled) return;
         const { createStarfield, updateStarfield } = await import("@/lib/game/starfield");
-        const { createSpaceship, updateSpaceship, bankSpaceship } = await import("@/lib/game/spaceship");
+        const { createSpaceship, updateSpaceship, bankSpaceship, SHIP_X_RATIO } = await import("@/lib/game/spaceship");
         const { createPriceTrail, pushPrice, drawPriceTrail } = await import("@/lib/game/price-trail");
         const { warpFlash } = await import("@/lib/game/trade-effects");
         if (cancelled) return;
@@ -116,10 +116,11 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
 
         ro = new ResizeObserver(([entry]) => {
           if (entry === undefined) return;
-          const { width, height } = entry.contentRect;
-          app.renderer.resize(width, height);
+          const w = Math.round(entry.contentRect.width);
+          const h = Math.round(entry.contentRect.height);
+          app.renderer.resize(w, h);
           const state = stateRef.current;
-          if (state !== null) state.ship.container.x = width / 2;
+          if (state !== null) state.ship.container.x = app.screen.width * SHIP_X_RATIO;
         });
         ro.observe(canvas);
 
@@ -152,8 +153,9 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           }
 
           const { width, height } = app.screen;
+          const trailEndX = width * SHIP_X_RATIO;
           updateStarfield(state.starLayers, ticker.deltaTime, state.warping, width);
-          drawPriceTrail(state.trail, width / 2, height);
+          drawPriceTrail(state.trail, trailEndX, height);
           if (state.trail.lastY !== 0) {
             const prevY = ship.container.y;
             ship.container.y = state.trail.lastY;

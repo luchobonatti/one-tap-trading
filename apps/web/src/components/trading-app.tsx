@@ -36,10 +36,16 @@ export function TradingApp() {
   const [tradeError, setTradeError] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (drawerRef.current !== null && !drawerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        drawerRef.current !== null &&
+        !drawerRef.current.contains(target) &&
+        (bottomBarRef.current === null || !bottomBarRef.current.contains(target))
+      ) {
         setDrawerOpen(false);
       }
     }
@@ -107,7 +113,7 @@ export function TradingApp() {
 
       {isReady && (
         <>
-          <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/5 bg-[var(--color-space-bg)]/90 backdrop-blur-sm">
+          <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/5 bg-[var(--color-space-bg)]/90 backdrop-blur-sm">
             <div className="flex items-center justify-center gap-4 px-4 py-3">
               <LongShortButtons disabled={isPending} onClick={(dir) => void handleTrade(dir)} />
 
@@ -118,7 +124,9 @@ export function TradingApp() {
               <div className="h-6 w-px bg-white/10" />
 
               <p className="font-mono text-[10px] text-[var(--color-star-dim)]">
-                {session.expiresAt?.toLocaleTimeString()} ·{" "}
+                {session.expiresAt !== undefined && (
+                  <>{session.expiresAt.toLocaleTimeString()} · </>
+                )}
                 <button
                   type="button"
                   className="underline transition hover:text-white"
