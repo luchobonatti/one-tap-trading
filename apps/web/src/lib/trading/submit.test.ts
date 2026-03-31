@@ -25,10 +25,13 @@ vi.mock("@/lib/aa/session-key", () => ({
 }));
 
 import { publicClient } from "@/lib/aa/client";
+import { getSmartAccountClient } from "@/lib/aa/account";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
+import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
 
 const mockReadContract = vi.mocked(publicClient.readContract);
 const mockGetBlock = vi.mocked(publicClient.getBlock);
+const mockGetSmartAccountClient = vi.mocked(getSmartAccountClient);
 const mockLoadSession = vi.mocked(loadSessionKey);
 const mockIsExpired = vi.mocked(isSessionExpired);
 
@@ -38,13 +41,16 @@ const MOCK_SESSION = {
   privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as `0x${string}`,
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
   validUntil: Math.floor(Date.now() / 1000) + 3600,
-  validatorAddress: "0xB5eA8ABFf1bd18Ceb9EE5b40a55d832Bbb5D1B44" as `0x${string}`,
+  validatorAddress: sessionKeyValidatorAddress[6343],
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockReadContract.mockResolvedValue([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
   mockGetBlock.mockResolvedValue({ timestamp: CHAIN_TIMESTAMP } as unknown as never);
+  mockGetSmartAccountClient.mockResolvedValue({
+    sendUserOperation: vi.fn().mockResolvedValue("0xophash"),
+  } as never);
   mockLoadSession.mockReturnValue(MOCK_SESSION);
   mockIsExpired.mockReturnValue(false);
 });
@@ -71,34 +77,28 @@ describe("openTrade", () => {
   it("throws if no session key", async () => {
     mockLoadSession.mockReturnValue(null);
     await expect(
-      openTrade({
-        isLong: true,
-        collateral: 1_000_000n,
-        leverage: 5n,
-
-      }),
+      openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n }),
     ).rejects.toThrow("No active session key");
   });
 
   it("throws if session expired", async () => {
     mockIsExpired.mockReturnValue(true);
     await expect(
-      openTrade({
-        isLong: true,
-        collateral: 1_000_000n,
-        leverage: 5n,
-
-      }),
+      openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n }),
     ).rejects.toThrow("Session key expired");
   });
 
-  it("returns opHash on success", async () => {
-    const hash = await openTrade({
-      isLong: true,
-      collateral: 1_000_000n,
-      leverage: 5n,
+  it("throws if smart account client unavailable", async () => {
+    mockGetSmartAccountClient.mockRejectedValueOnce(
+      new Error("No stored account — create a passkey account first"),
+    );
+    await expect(
+      openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n }),
+    ).rejects.toThrow("No stored account");
+  });
 
-    });
+  it("returns opHash on success", async () => {
+    const hash = await openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n });
     expect(hash).toBe("0xophash");
   });
 });
@@ -106,19 +106,18 @@ describe("openTrade", () => {
 describe("closeTrade", () => {
   it("throws if session expired", async () => {
     mockIsExpired.mockReturnValue(true);
-    await expect(
-      closeTrade({
-        positionId: 1n,
+    await expect(closeTrade({ positionId: 1n })).rejects.toThrow("Session key expired");
+  });
 
-      }),
-    ).rejects.toThrow("Session key expired");
+  it("throws if smart account client unavailable", async () => {
+    mockGetSmartAccountClient.mockRejectedValueOnce(
+      new Error("No stored account — create a passkey account first"),
+    );
+    await expect(closeTrade({ positionId: 1n })).rejects.toThrow("No stored account");
   });
 
   it("returns opHash on success", async () => {
-    const hash = await closeTrade({
-      positionId: 1n,
-
-    });
+    const hash = await closeTrade({ positionId: 1n });
     expect(hash).toBe("0xophash");
   });
 });

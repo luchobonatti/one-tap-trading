@@ -613,6 +613,45 @@ contract VerifyingPaymasterTest is Test {
         }
     }
 
+    function test_fuzz_ValidatePaymasterUserOp_InstallModule(
+        uint256 fuzzModuleTypeId,
+        address fuzzModule
+    ) public {
+        vm.assume(fuzzModule != address(0));
+
+        bytes4 installModuleSelector = bytes4(keccak256("installModule(uint256,address,bytes)"));
+        bytes memory callDataInner =
+            abi.encodeWithSelector(installModuleSelector, fuzzModuleTypeId, fuzzModule, bytes(""));
+        bytes memory execCalldata = abi.encodePacked(user, uint256(0), callDataInner);
+        bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
+
+        PackedUserOperation memory userOp;
+        userOp.sender = user;
+        userOp.callData = callData;
+
+        bool isValid = fuzzModuleTypeId == 1 && fuzzModule == sessionKeyValidator;
+
+        vm.prank(entryPoint);
+
+        if (isValid) {
+            (, uint256 validationData) =
+                paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+            assertEq(validationData, 0);
+        } else if (fuzzModuleTypeId != 1) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IVerifyingPaymaster.SelectorNotAllowed.selector, installModuleSelector
+                )
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        } else {
+            vm.expectRevert(
+                abi.encodeWithSelector(IVerifyingPaymaster.TargetNotAllowed.selector, fuzzModule)
+            );
+            paymaster.validatePaymasterUserOp(userOp, keccak256(abi.encode(userOp)), 100_000);
+        }
+    }
+
     // ─── Helper functions ─────────────────────────────────────────────────────
 
     /// @dev Build an ERC-7579 single-call execute callData targeting `target` with `innerData`.

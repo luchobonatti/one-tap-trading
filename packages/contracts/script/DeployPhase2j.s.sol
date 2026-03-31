@@ -13,7 +13,7 @@ import { VerifyingPaymaster } from "src/VerifyingPaymaster.sol";
 /// @notice Replaces MockPriceFeed+PriceOracle+PerpEngine with the live RedStone Bolt ETH/USD feed.
 ///
 ///         RedStone Bolt feed on Carrot testnet: 0x9674Dbe42f9996e1470F8eC15a6D0aebA4a93AEb
-///         Timestamps are in nanoseconds — RedStoneAdapter converts to seconds before PriceOracle
+///         RedStoneAdapter converts feed timestamps (microseconds) to seconds before PriceOracle
 ///         checks them against STALENESS_THRESHOLD (5 s). No keeper required.
 contract DeployPhase2j is Script {
     using stdJson for string;

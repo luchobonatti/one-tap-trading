@@ -40,7 +40,7 @@ const GET_SESSION_ABI = [
 // grants selector access when initData encodes selectorData = execute_selector (4 bytes).
 // Kernel source: if (data.selectorData.length == 4) _grantAccess(vId, selector, true)
 // Without this grant, validateUserOp reverts with InvalidValidator() because
-// allowedSelectors[vId][execute_selector] is false — the actual root cause of AA23.
+// allowedSelectors[vId][execute_selector] is false.
 const INSTALL_MODULE_ABI = [
   {
     name: "installModule",
@@ -131,9 +131,8 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const client = await getSmartAccountClient();
   const smartAccountAddress = client.account.address as Address;
 
-  const accountDeployed =
-    (await publicClient.getCode({ address: smartAccountAddress })) !== undefined &&
-    (await publicClient.getCode({ address: smartAccountAddress })) !== "0x";
+  const accountCode = await publicClient.getCode({ address: smartAccountAddress });
+  const accountDeployed = accountCode !== undefined && accountCode !== "0x";
 
   let sessionAlreadyActive = false;
   if (accountDeployed) {

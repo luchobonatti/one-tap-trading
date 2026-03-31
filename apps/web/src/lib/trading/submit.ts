@@ -71,7 +71,7 @@ function requireActiveSession() {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<Hex> {
-  requireActiveSession();
+  requireActiveSession(); // gate: ensures approve+session are set; trade itself uses root validator
   const bounds = await getCurrentPriceBounds();
 
   const tradeCallData = encodeFunctionData({
