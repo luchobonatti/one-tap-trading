@@ -2,20 +2,18 @@ import { Graphics, Container, Particle, ParticleContainer, Texture } from "pixi.
 import type { Application } from "pixi.js";
 import { GlowFilter } from "pixi-filters";
 
-const LERP_FACTOR = 0.04;
 const BANK_MAX_DEG = 8;
 const BANK_RETURN_FRAMES = 30;
 const BOB_AMPLITUDE = 3;
 const BOB_HZ = 0.8;
 const TRAIL_PARTICLES_PER_FRAME = 5;
-const SHIP_X_RATIO = 0.5;
+export const SHIP_X_RATIO = 0.5;
 
 export type Spaceship = {
   container: Container;
   hull: Graphics;
   trailContainer: ParticleContainer;
   trailParticles: Particle[];
-  targetY: number;
   bankAngle: number;
   bankFrames: number;
   tick: number;
@@ -44,7 +42,6 @@ export function createSpaceship(app: Application): Spaceship {
     hull,
     trailContainer,
     trailParticles: [],
-    targetY: height / 2,
     bankAngle: 0,
     bankFrames: 0,
     tick: 0,
@@ -61,7 +58,7 @@ export function updateSpaceship(ship: Spaceship, delta: number): void {
   ship.tick += delta;
 
   const bob = Math.sin((ship.tick * BOB_HZ * Math.PI * 2) / 60) * BOB_AMPLITUDE;
-  ship.container.y += bob * 0.1;
+  ship.hull.y = bob;
 
   if (ship.bankFrames > 0) {
     ship.bankFrames -= delta;
@@ -79,15 +76,6 @@ export function updateSpaceship(ship: Spaceship, delta: number): void {
 export function bankSpaceship(ship: Spaceship, direction: "up" | "down"): void {
   ship.bankAngle = direction === "up" ? -BANK_MAX_DEG : BANK_MAX_DEG;
   ship.bankFrames = BANK_RETURN_FRAMES;
-}
-
-export function setSpaceshipTargetY(ship: Spaceship, y: number): void {
-  const prev = ship.targetY;
-  ship.targetY = y;
-  const diff = y - prev;
-  if (Math.abs(diff) > 2) {
-    bankSpaceship(ship, diff < 0 ? "up" : "down");
-  }
 }
 
 function emitTrail(ship: Spaceship): void {

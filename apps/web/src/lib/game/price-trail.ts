@@ -69,7 +69,7 @@ export function drawPriceTrail(
   const range = max - min || 1;
   const padTop = HEADER_HEIGHT + 16;
   const padBottom = FOOTER_HEIGHT + 16;
-  const drawH = height - padTop - padBottom;
+  const drawH = Math.max(1, height - padTop - padBottom);
   const yMin = padTop;
   const yMax = padTop + drawH;
 
