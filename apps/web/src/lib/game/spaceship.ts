@@ -2,7 +2,7 @@ import { Graphics, Container, Particle, ParticleContainer, Texture } from "pixi.
 import type { Application } from "pixi.js";
 import { GlowFilter } from "pixi-filters";
 
-const LERP_FACTOR = 0.1;
+const LERP_FACTOR = 0.04;
 const BANK_MAX_DEG = 8;
 const BANK_RETURN_FRAMES = 30;
 const BOB_AMPLITUDE = 3;

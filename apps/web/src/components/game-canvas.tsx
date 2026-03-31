@@ -23,8 +23,6 @@ type Props = {
 
 const VOLATILITY_THRESHOLD = 0.02;
 const VOLATILITY_WINDOW_MS = 1000;
-const PRICE_WINDOW_SIZE = 60;
-const SHIP_Y_EDGE_RATIO = 0.05;
 
 const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
   function GameCanvasInner({ priceRef }, ref) {
@@ -38,7 +36,6 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
       warping: boolean;
       lastPrice: bigint;
       lastPriceTime: number;
-      priceWindow: number[];
     } | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -115,7 +112,6 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
           warping: false,
           lastPrice: 0n,
           lastPriceTime: Date.now(),
-          priceWindow: [],
         };
 
         ro = new ResizeObserver(([entry]) => {
@@ -152,38 +148,16 @@ const GameCanvasInner = forwardRef<GameCanvasHandle, Props>(
               state.lastPrice = price;
               state.lastPriceTime = now;
               pushPrice(trail, price);
-
-              const priceNum = Number(price);
-              state.priceWindow.push(priceNum);
-              if (state.priceWindow.length > PRICE_WINDOW_SIZE) {
-                state.priceWindow.shift();
-              }
-
-              const h = app.screen.height;
-              let targetY = h * 0.5;
-              if (state.priceWindow.length >= 2) {
-                let windowMin = state.priceWindow[0] ?? priceNum;
-                let windowMax = windowMin;
-                for (const p of state.priceWindow) {
-                  if (p < windowMin) windowMin = p;
-                  if (p > windowMax) windowMax = p;
-                }
-                if (windowMax > windowMin) {
-                  const norm = 1 - (priceNum - windowMin) / (windowMax - windowMin);
-                  targetY = Math.max(
-                    h * SHIP_Y_EDGE_RATIO,
-                    Math.min(h * (1 - SHIP_Y_EDGE_RATIO), norm * h),
-                  );
-                }
-              }
-              setSpaceshipTargetY(ship, targetY);
             }
           }
 
           const { width, height } = app.screen;
           updateStarfield(state.starLayers, ticker.deltaTime, state.warping, width);
-          updateSpaceship(state.ship, ticker.deltaTime);
           drawPriceTrail(state.trail, width / 2, height);
+          if (state.trail.lastY !== 0) {
+            setSpaceshipTargetY(ship, state.trail.lastY);
+          }
+          updateSpaceship(state.ship, ticker.deltaTime);
         };
         app.ticker.add(gameTickerCb);
       };
