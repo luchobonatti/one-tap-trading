@@ -112,7 +112,7 @@ export function PositionsPanel({ accountAddress, priceRef, onTradeClose }: Props
     async (pos: Position) => {
       if (accountAddress === undefined) return;
       try {
-        const opHash = await closeTrade({ positionId: pos.id, accountAddress });
+        const opHash = await closeTrade({ positionId: pos.id });
         await waitForOp(opHash);
         const exitPriceBigInt = priceRef.current;
         const pnlRaw = calculatePnL(

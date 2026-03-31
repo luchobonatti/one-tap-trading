@@ -99,12 +99,13 @@ contract SessionKeyValidator is ISessionKeyValidator {
     {
         bytes calldata signature = userOp.signature;
 
-        // Kernel v3 passes the full signature including the 1-byte mode prefix (e.g. 0x00 for
-        // DEFAULT). Strip the mode byte: actual session signature starts at offset 1.
-        // Format: mode(1B) + sessionKeyAddress(20B) + ecdsaSig(65B) = 86 bytes minimum.
-        if (signature.length < 86) return VALIDATION_FAILED;
+        // Kernel v3.1 passes the full signature to the module without stripping (ERC-7579).
+        // Format: mode(1B) + validatorAddress(20B) + sessionKeyAddress(20B) + ecdsaSig(65B).
+        // Byte layout: [0]=mode, [1:21]=validatorAddr, [21:41]=sessionKeyAddr, [41:106]=ecdsaSig.
+        // Minimum length: 1 + 20 + 20 + 65 = 106 bytes.
+        if (signature.length < 106) return VALIDATION_FAILED;
 
-        address extractedSessionKey = address(bytes20(signature[1:21]));
+        address extractedSessionKey = address(bytes20(signature[21:41]));
 
         address sender = userOp.sender;
         SessionData storage session = sessions[sender];
@@ -126,7 +127,7 @@ contract SessionKeyValidator is ISessionKeyValidator {
         // Doing this first prevents a griefing attack where an attacker passes the correct
         // sessionKey address but an invalid ECDSA signature, incrementing spentAmount and
         // locking the session without ever being authorised.
-        if (!_verifyEcdsa(userOpHash, signature[21:86], extractedSessionKey)) {
+        if (!_verifyEcdsa(userOpHash, signature[41:106], extractedSessionKey)) {
             return VALIDATION_FAILED;
         }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { encodeFunctionData, maxUint256, parseUnits, toHex } from "viem";
+import { encodeFunctionData, encodeAbiParameters, concat, maxUint256, parseUnits, toHex } from "viem";
 import type { Address, Hex } from "viem";
 import {
   mockUsdcAbi,
@@ -36,50 +36,32 @@ const GET_SESSION_ABI = [
   },
 ] as const;
 
-// Kernel v3.1 installs validators via installValidations, NOT installModule.
-// installModule(1, addr, bytes) reverts silently on Kernel v3.1 for validator type.
-// vId format: bytes21 = bytes1(VALIDATOR_TYPE.SECONDARY=0x01) || address(module)
-const INSTALL_VALIDATIONS_ABI = [
+// Kernel v0.3.1 installModule(1, addr, initData) installs a validator AND
+// grants selector access when initData encodes selectorData = execute_selector (4 bytes).
+// Kernel source: if (data.selectorData.length == 4) _grantAccess(vId, selector, true)
+// Without this grant, validateUserOp reverts with InvalidValidator() because
+// allowedSelectors[vId][execute_selector] is false.
+const INSTALL_MODULE_ABI = [
   {
-    name: "installValidations",
-    type: "function",
-    inputs: [
-      { name: "vIds", type: "bytes21[]" },
-      {
-        name: "configs",
-        type: "tuple[]",
-        components: [
-          { name: "nonce", type: "uint32" },
-          { name: "hook", type: "address" },
-        ],
-      },
-      { name: "validationData", type: "bytes[]" },
-      { name: "hookData", type: "bytes[]" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-] as const;
-
-const IS_MODULE_INSTALLED_ABI = [
-  {
-    name: "isModuleInstalled",
+    name: "installModule",
     type: "function",
     inputs: [
       { name: "moduleTypeId", type: "uint256" },
       { name: "module", type: "address" },
-      { name: "additionalContext", type: "bytes" },
+      { name: "initData", type: "bytes" },
     ],
-    outputs: [{ name: "", type: "bool" }],
-    stateMutability: "view",
+    outputs: [],
+    stateMutability: "payable",
   },
 ] as const;
+
+
 
 // Bump the version whenever the stored shape changes so old entries are
 // automatically discarded on load.  This also invalidates any session that was
 // delegated against a now-redeployed SessionKeyValidator.
-const STORAGE_KEY = "ott-session-key-v3";
-const LEGACY_KEYS = ["ott-session-key-v1", "ott-session-key-v2"] as const;
+const STORAGE_KEY = "ott-session-key-v6";
+const LEGACY_KEYS = ["ott-session-key-v1", "ott-session-key-v2", "ott-session-key-v3", "ott-session-key-v4", "ott-session-key-v5"] as const;
 const VALID_DURATION_SECONDS = 4 * 3600;
 
 // Correct selectors derived from keccak256 of full function signatures.
@@ -152,16 +134,6 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const accountCode = await publicClient.getCode({ address: smartAccountAddress });
   const accountDeployed = accountCode !== undefined && accountCode !== "0x";
 
-  let moduleInstalled = false;
-  if (accountDeployed) {
-    moduleInstalled = await publicClient.readContract({
-      address: smartAccountAddress,
-      abi: IS_MODULE_INSTALLED_ABI,
-      functionName: "isModuleInstalled",
-      args: [1n, sessionKeyValidatorAddress[6343], "0x"],
-    });
-  }
-
   let sessionAlreadyActive = false;
   if (accountDeployed) {
     try {
@@ -183,17 +155,26 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
     args: [],
   });
 
-  // vId = 0x01 (SECONDARY type) + 20-byte address = 21 bytes
-  const vId = `0x01${sessionKeyValidatorAddress[6343].slice(2)}` as `0x${string}`;
-  const installValidationsCallData = encodeFunctionData({
-    abi: INSTALL_VALIDATIONS_ABI,
-    functionName: "installValidations",
-    args: [
-      [vId],
-      [{ nonce: 1, hook: "0x0000000000000000000000000000000000000000" }],
-      ["0x"],
-      ["0x"],
-    ],
+  // installModule(1, SKV, initData) installs the validator AND grants
+  // allowedSelectors[vId][execute_selector] = true in one call.
+  // initData layout: hookAddress(20B raw) || ABI-encoded(selectorData, validatorData, hookData)
+  // selectorData must be exactly 4 bytes so Kernel calls _grantAccess internally.
+  const HOOK_MODULE_INSTALLED = "0x0000000000000000000000000000000000000001" as const;
+  const installModuleInitData = concat([
+    HOOK_MODULE_INSTALLED,
+    encodeAbiParameters(
+      [
+        { type: "bytes", name: "selectorData" },
+        { type: "bytes", name: "validatorData" },
+        { type: "bytes", name: "hookData" },
+      ],
+      ["0xe9ae5c53", "0x", "0x"],
+    ),
+  ]);
+  const installModuleCallData = encodeFunctionData({
+    abi: INSTALL_MODULE_ABI,
+    functionName: "installModule",
+    args: [1n, sessionKeyValidatorAddress[6343], installModuleInitData],
   });
 
   const calls = [
@@ -202,15 +183,11 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
       data: approveCallData,
       value: 0n,
     },
-    ...(moduleInstalled
-      ? []
-      : [
-          {
-            to: smartAccountAddress,
-            data: installValidationsCallData,
-            value: 0n,
-          },
-        ]),
+    {
+      to: smartAccountAddress,
+      data: installModuleCallData,
+      value: 0n,
+    },
     ...(sessionAlreadyActive
       ? [
           {

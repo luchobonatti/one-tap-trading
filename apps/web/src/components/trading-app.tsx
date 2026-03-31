@@ -50,7 +50,6 @@ export function TradingApp() {
           isLong: direction === "long",
           collateral: 1_000_000n,
           leverage: BigInt(leverage),
-          accountAddress: account.address,
         });
         await waitForOp(opHash);
         canvasRef.current?.triggerWin();
