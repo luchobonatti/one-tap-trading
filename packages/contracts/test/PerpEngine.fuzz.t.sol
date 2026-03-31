@@ -1,107 +1,78 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { Test } from "forge-std/Test.sol";
-import { MockPriceFeed } from "src/MockPriceFeed.sol";
-import { MockUSDC } from "src/MockUSDC.sol";
+import { ProductionFixture } from "./fixtures/ProductionFixture.sol";
 import { PerpEngine, PositionHealthy } from "src/PerpEngine.sol";
-import { PriceOracle } from "src/PriceOracle.sol";
-import { Settlement } from "src/Settlement.sol";
 import { IPerpEngine } from "src/IPerpEngine.sol";
 
 /// @title PerpEngineFuzzTest
-/// @notice Constrained fuzz tests for the full PerpEngine lifecycle.
+/// @notice Constrained fuzz tests for PerpEngine with TWAP-active oracle.
+///         Uses ProductionFixture so all tests exercise the same oracle gates
+///         that exist on-chain. Price changes use rampPrice() to stay within
+///         MAX_DEVIATION.
+///
 ///         Configured for 10 000 runs via foundry.toml [profile.default] fuzz.runs.
-///         Covers: open, close, liquidate with randomised collateral, leverage, prices.
-contract PerpEngineFuzzTest is Test {
-    MockUSDC internal usdc;
-    MockPriceFeed internal feed;
-    PriceOracle internal oracle;
-    Settlement internal settlement;
-    PerpEngine internal engine;
-
-    address internal owner = address(this);
+contract PerpEngineFuzzTest is ProductionFixture {
     address internal trader = makeAddr("trader");
-    address internal keeper = makeAddr("keeper");
 
-    uint256 private constant HOUSE_RESERVE = 10_000_000e6; // 10M USDC
+    uint256 private constant FUZZ_HOUSE_RESERVE = 10_000_000e6;
 
-    function setUp() public {
-        usdc = new MockUSDC();
-        feed = new MockPriceFeed(int256(2_000e8));
-        oracle = new PriceOracle(address(feed));
-        settlement = new Settlement(address(usdc), address(0));
-        engine = new PerpEngine(address(oracle), address(settlement), address(usdc));
-        settlement.setEngine(address(engine));
-
-        // Fund house reserve generously so profitable trades always pay out.
-        usdc.mint(owner, HOUSE_RESERVE);
-        usdc.approve(address(settlement), HOUSE_RESERVE);
-        settlement.fundHouseReserve(HOUSE_RESERVE);
+    function setUp() public override {
+        super.setUp();
+        // Fund house reserve generously for profitable trades.
+        fundHouseReserve(FUZZ_HOUSE_RESERVE);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    // ── Fuzz: openPosition -> closePosition lifecycle ───────────────
 
-    function _bounds(uint256 price) internal view returns (IPerpEngine.PriceBounds memory) {
-        return IPerpEngine.PriceBounds({
-            expectedPrice: price,
-            maxDeviation: price, // very wide — accept any oracle price up to 2×
-            deadline: block.timestamp + 3600
-        });
-    }
-
-    function _open(bool isLong, uint256 collateral, uint256 leverage, uint256 entryPrice)
-        internal
-        returns (uint256 posId)
-    {
-        feed.setPrice(int256(entryPrice));
-        usdc.mint(trader, collateral);
-        vm.prank(trader);
-        usdc.approve(address(settlement), collateral);
-        vm.prank(trader);
-        posId = engine.openPosition(isLong, collateral, leverage, _bounds(entryPrice));
-    }
-
-    // ─── Fuzz: openPosition → closePosition lifecycle ─────────────────────────
-
-    /// @dev Randomise direction, collateral, leverage, entry/exit prices.
-    ///      After close, verify: payout ≥ 0 (implicit), payout ≤ solvency buffer,
-    ///      position is no longer open.
-    ///      Exit price bounded to ±50% of entry to keep max profit within house reserve.
+    /// @dev Randomise direction, collateral, leverage, entry price.
+    ///      Exit price bounded to ±2.5% of entry (within TWAP 3% gate).
+    ///      Verifies: payout <= solvency buffer, position closed,
+    ///      accounting identity holds.
     function testFuzz_OpenAndClose(
         bool isLong,
         uint256 collateralSeed,
         uint256 leverageSeed,
         uint256 entryPriceSeed,
-        uint256 exitPriceSeed
+        uint256 exitDeltaSeed
     ) public {
-        // ── Constrain inputs to realistic ranges ──────────────────────────────
-        uint256 collateral = bound(collateralSeed, 1e6, 100_000e6); // 1–100k USDC
-        uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE()); // 1–20×
-        uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8); // $100–$100k
-        // ±50% of entry keeps max pnl = collateral × leverage × 0.5 = 10× max collateral,
-        // which fits comfortably within the 10M house reserve.
-        uint256 exitPrice = bound(exitPriceSeed, entryPrice / 2, entryPrice * 3 / 2);
+        uint256 collateral = bound(collateralSeed, 1e6, 100_000e6);
+        uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE());
+        uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8);
+
+        // Exit within ±2.5% of entry to stay within MAX_DEVIATION.
+        // range = entryPrice * 5% = 0.05 * entryPrice
+        uint256 range = entryPrice * 5 / 100;
+        uint256 exitDelta = bound(exitDeltaSeed, 0, range);
+        // Alternate up/down based on isLong to get both profit and loss
+        uint256 exitPrice = isLong ? entryPrice + exitDelta / 2 : entryPrice - exitDelta / 2;
+        if (exitPrice == 0) exitPrice = 1e8;
+
+        // Seed oracle at entry price (fills ring buffer)
+        setOraclePrice(entryPrice);
 
         uint256 bufferBefore = settlement.solvencyBuffer();
 
-        // ── Open ──────────────────────────────────────────────────────────────
-        uint256 posId = _open(isLong, collateral, leverage, entryPrice);
-
-        // ── Close at exit price ───────────────────────────────────────────────
-        feed.setPrice(int256(exitPrice));
+        // Open position
+        usdc.mint(trader, collateral);
         vm.prank(trader);
-        engine.closePosition(posId, _bounds(exitPrice));
+        usdc.approve(address(settlement), collateral);
+        vm.prank(trader);
+        uint256 posId = engine.openPosition(isLong, collateral, leverage, wideBounds(entryPrice));
 
-        // ── Invariants ────────────────────────────────────────────────────────
+        // Small move to exit price (within 2.5%, safe for TWAP)
+        rampPrice(entryPrice, exitPrice, 10, 5);
+
+        vm.prank(trader);
+        engine.closePosition(posId, wideBounds(exitPrice));
+
+        // Invariants
         IPerpEngine.Position memory pos = engine.getPosition(posId);
         assertFalse(pos.isOpen, "position must be closed");
 
-        // Payout never exceeds pre-close solvency buffer.
         uint256 traderBal = usdc.balanceOf(trader);
         assertLe(traderBal, bufferBefore, "payout must not exceed buffer");
 
-        // Settlement accounting is consistent.
         assertEq(
             settlement.solvencyBuffer(),
             usdc.balanceOf(address(settlement)),
@@ -109,8 +80,8 @@ contract PerpEngineFuzzTest is Test {
         );
     }
 
-    /// @dev Open a position, then attempt liquidation at the same entry price.
-    ///      With safe leverage (≤20), equity ≥ maintenanceMargin at entry → must revert PositionHealthy.
+    /// @dev Open at any safe price, attempt liquidation at entry price.
+    ///      With safe leverage (<=20), must revert PositionHealthy.
     function testFuzz_CannotLiquidateAtEntryPrice(
         bool isLong,
         uint256 collateralSeed,
@@ -121,7 +92,13 @@ contract PerpEngineFuzzTest is Test {
         uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE());
         uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8);
 
-        uint256 posId = _open(isLong, collateral, leverage, entryPrice);
+        setOraclePrice(entryPrice);
+
+        usdc.mint(trader, collateral);
+        vm.prank(trader);
+        usdc.approve(address(settlement), collateral);
+        vm.prank(trader);
+        uint256 posId = engine.openPosition(isLong, collateral, leverage, wideBounds(entryPrice));
 
         // Liquidate at entry price — must fail.
         vm.expectRevert(abi.encodeWithSelector(PositionHealthy.selector, posId));
@@ -129,73 +106,81 @@ contract PerpEngineFuzzTest is Test {
         engine.liquidate(posId);
     }
 
-    /// @dev Open a position, crash the price to near-zero, then liquidate.
-    ///      After liquidation: position closed, trader payout + keeper reward ≤ collateral,
-    ///      solvency invariant holds.
-    function testFuzz_LiquidateAfterCrash(
-        uint256 collateralSeed,
-        uint256 leverageSeed,
-        uint256 entryPriceSeed
-    ) public {
+    /// @dev Open a long, crash price by 2.5% (within TWAP), liquidate
+    ///      positions with high leverage that become underwater.
+    function testFuzz_LiquidateAfterSmallCrash(uint256 collateralSeed, uint256 entryPriceSeed)
+        public
+    {
         uint256 collateral = bound(collateralSeed, 1e6, 100_000e6);
-        uint256 leverage = bound(leverageSeed, 2, engine.MAX_SAFE_LEVERAGE()); // ≥2 so crash triggers liq
         uint256 entryPrice = bound(entryPriceSeed, 200e8, 100_000e8);
 
-        // Open a long — crashing the price will make it liquidatable.
-        uint256 posId = _open(true, collateral, leverage, entryPrice);
+        // Use max safe leverage (20x) so a small move triggers liquidation.
+        // At 20x, maintenanceMargin = 100% of collateral.
+        // A 2.5% drop: pnl = -50% of collateral → equity = 50% < 100%
+        uint256 leverage = engine.MAX_SAFE_LEVERAGE();
 
-        // Crash price by enough to breach maintenance margin.
-        // Required: equity < maintenanceMargin → price drop > (1 - 5%×leverage/100%) × entryPrice
-        // For any leverage ≥2 with 5% margin, a 50% drop always triggers liquidation.
-        uint256 crashPrice = entryPrice / 2;
-        if (crashPrice == 0) crashPrice = 1e8; // floor at $1
-        feed.setPrice(int256(crashPrice));
+        setOraclePrice(entryPrice);
 
-        // Liquidate.
+        usdc.mint(trader, collateral);
+        vm.prank(trader);
+        usdc.approve(address(settlement), collateral);
+        vm.prank(trader);
+        uint256 posId = engine.openPosition(true, collateral, leverage, wideBounds(entryPrice));
+
+        // Crash 2.5% — within TWAP deviation
+        uint256 crashPrice = entryPrice * 975 / 1000;
+        if (crashPrice == 0) crashPrice = 1e8;
+        rampPrice(entryPrice, crashPrice, 10, 5);
+
         vm.prank(keeper);
         engine.liquidate(posId);
 
-        // Invariants.
         IPerpEngine.Position memory pos = engine.getPosition(posId);
-        assertFalse(pos.isOpen, "position must be closed after liquidation");
+        assertFalse(pos.isOpen, "position must be closed");
 
         uint256 traderPayout = usdc.balanceOf(trader);
         uint256 keeperPayout = usdc.balanceOf(keeper);
         assertLe(
-            traderPayout + keeperPayout,
-            collateral,
-            "total payouts from liquidated position must not exceed collateral"
+            traderPayout + keeperPayout, collateral, "total payouts must not exceed collateral"
         );
     }
 
-    /// @dev Bounded-loss: trader payout ≤ collateral + notional (max possible profit).
-    ///      Exit price bounded ±50% of entry to keep profits within house reserve.
+    /// @dev Bounded-loss invariant: payout <= collateral + notional.
     function testFuzz_BoundedLossOnClose(
         bool isLong,
         uint256 collateralSeed,
         uint256 leverageSeed,
         uint256 entryPriceSeed,
-        uint256 exitPriceSeed
+        uint256 exitDeltaSeed
     ) public {
         uint256 collateral = bound(collateralSeed, 1e6, 100_000e6);
         uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE());
         uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8);
-        uint256 exitPrice = bound(exitPriceSeed, entryPrice / 2, entryPrice * 3 / 2);
 
-        uint256 posId = _open(isLong, collateral, leverage, entryPrice);
+        // Exit within ±2.5%
+        uint256 maxDelta = entryPrice * 25 / 1000;
+        uint256 exitDelta = bound(exitDeltaSeed, 0, maxDelta);
+        uint256 exitPrice =
+            isLong ? entryPrice + exitDelta : entryPrice > exitDelta ? entryPrice - exitDelta : 1e8;
 
-        feed.setPrice(int256(exitPrice));
+        setOraclePrice(entryPrice);
+
+        usdc.mint(trader, collateral);
+        vm.prank(trader);
+        usdc.approve(address(settlement), collateral);
+        vm.prank(trader);
+        uint256 posId = engine.openPosition(isLong, collateral, leverage, wideBounds(entryPrice));
+
+        rampPrice(entryPrice, exitPrice, 10, 5);
+
         uint256 traderBefore = usdc.balanceOf(trader);
         vm.prank(trader);
-        engine.closePosition(posId, _bounds(exitPrice));
+        engine.closePosition(1, wideBounds(exitPrice));
 
         uint256 payout = usdc.balanceOf(trader) - traderBefore;
-
-        // Real bounded-loss check: payout ≤ collateral + notional (max 100% profit).
         uint256 notional = collateral * leverage;
         assertLe(payout, collateral + notional, "payout bounded by collateral + notional");
 
-        // Solvency buffer matches actual USDC held.
         assertEq(
             settlement.solvencyBuffer(),
             usdc.balanceOf(address(settlement)),
@@ -203,29 +188,26 @@ contract PerpEngineFuzzTest is Test {
         );
     }
 
-    /// @dev Stale oracle edge case: price must be fresh for open.
-    ///      Warp past staleness threshold, attempt open, expect revert from oracle.
+    /// @dev Stale oracle blocks open — warp past staleness threshold.
     function testFuzz_StaleOracleRevertsOnOpen(
         uint256 collateralSeed,
         uint256 leverageSeed,
-        uint256 entryPriceSeed,
         uint256 warpSeed
     ) public {
         uint256 collateral = bound(collateralSeed, 1e6, 100_000e6);
         uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE());
-        uint256 entryPrice = bound(entryPriceSeed, 100e8, 100_000e8);
-        uint256 warp = bound(warpSeed, 6, 3600); // 6s–1hr past staleness
+        uint256 warp = bound(warpSeed, 6, 3600);
 
-        feed.setPrice(int256(entryPrice));
-        feed.setUpdatedAt(block.timestamp);
         usdc.mint(trader, collateral);
         vm.prank(trader);
         usdc.approve(address(settlement), collateral);
 
+        // Freeze the feed timestamp and warp past staleness
+        feed.setUpdatedAt(block.timestamp);
         vm.warp(block.timestamp + warp);
 
-        vm.expectRevert(); // oracle reverts with StalePrice
+        vm.expectRevert(); // StalePrice from oracle
         vm.prank(trader);
-        engine.openPosition(true, collateral, leverage, _bounds(entryPrice));
+        engine.openPosition(true, collateral, leverage, wideBounds(PRICE_2K));
     }
 }

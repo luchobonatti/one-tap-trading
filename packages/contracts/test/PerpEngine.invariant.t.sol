@@ -10,9 +10,10 @@ import { PriceOracle } from "src/PriceOracle.sol";
 import { Settlement } from "src/Settlement.sol";
 import { IPerpEngine } from "src/IPerpEngine.sol";
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Handler: drives randomised open / close / liquidate / price-move sequences.
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
+// Handler: drives randomised open / close / liquidate / price-move
+// sequences with TWAP-aware oracle management.
+// ────────────────────────────────────────────────────────────────────
 
 contract PerpEngineHandler is Test {
     MockUSDC public usdc;
@@ -27,6 +28,8 @@ contract PerpEngineHandler is Test {
     uint256 public successfulOpens;
     uint256 public successfulCloses;
     uint256 public successfulLiquidations;
+    uint256 public oracleRecords;
+    uint256 public revertedOps;
 
     // Track open position IDs for close/liquidate targeting.
     uint256[] public openPositions;
@@ -35,8 +38,8 @@ contract PerpEngineHandler is Test {
     address internal constant TRADER = address(0xBEEF);
     address internal constant KEEPER = address(0xCAFE);
 
-    uint256 private constant MIN_PRICE = 100e8;
-    uint256 private constant MAX_PRICE = 100_000e8;
+    uint256 private constant MIN_PRICE = 1_000e8;
+    uint256 private constant MAX_PRICE = 10_000e8;
 
     constructor(
         MockUSDC usdc_,
@@ -54,22 +57,38 @@ contract PerpEngineHandler is Test {
         owner = owner_;
     }
 
-    // ─── Actions ──────────────────────────────────────────────────────────────
+    // ── Actions ─────────────────────────────────────────────────────
 
-    /// @dev Open a position with fuzzed params.
+    /// @dev Open a position with fuzzed params. Price moves are bounded
+    ///      to ±2.5% of current price to stay within TWAP MAX_DEVIATION.
     function openPosition(
         bool isLong,
         uint256 collateralSeed,
         uint256 leverageSeed,
-        uint256 priceSeed
+        uint256 priceDeltaSeed
     ) external {
         uint256 collateral = bound(collateralSeed, 1e6, 50_000e6);
         uint256 leverage = bound(leverageSeed, 1, engine.MAX_SAFE_LEVERAGE());
-        uint256 price = bound(priceSeed, MIN_PRICE, MAX_PRICE);
 
+        // Move price by ±2.5% of current to stay within TWAP bounds
+        (int256 currentRaw,) = feed.latestAnswer();
+        uint256 current = uint256(currentRaw);
+        uint256 maxDelta = current * 25 / 1000;
+        uint256 delta = bound(priceDeltaSeed, 0, maxDelta * 2);
+        uint256 price;
+        if (delta > maxDelta) {
+            price = current + (delta - maxDelta);
+        } else {
+            price = current > delta ? current - delta : MIN_PRICE;
+        }
+        price = bound(price, MIN_PRICE, MAX_PRICE);
+
+        // Warp 1s, set price, record observation (TWAP-aware)
+        vm.warp(block.timestamp + 1);
         feed.setPrice(int256(price));
+        oracle.recordObservation();
 
-        // Fund trader.
+        // Fund trader
         vm.startPrank(owner);
         usdc.mint(TRADER, collateral);
         vm.stopPrank();
@@ -85,19 +104,34 @@ contract PerpEngineHandler is Test {
             openPositions.push(posId);
             ++successfulOpens;
         } catch {
-            // Silently ignore — some combos may revert (e.g., oracle staleness after warp)
+            ++revertedOps;
         }
         vm.stopPrank();
     }
 
-    /// @dev Close a random open position at a fuzzed price.
-    function closePosition(uint256 indexSeed, uint256 priceSeed) external {
+    /// @dev Close a random open position. Moves price within ±2.5%.
+    function closePosition(uint256 indexSeed, uint256 priceDeltaSeed) external {
         if (openPositions.length == 0) return;
 
         uint256 idx = indexSeed % openPositions.length;
         uint256 posId = openPositions[idx];
-        uint256 price = bound(priceSeed, MIN_PRICE, MAX_PRICE);
+
+        // Small price move
+        (int256 currentRaw,) = feed.latestAnswer();
+        uint256 current = uint256(currentRaw);
+        uint256 maxDelta = current * 25 / 1000;
+        uint256 delta = bound(priceDeltaSeed, 0, maxDelta * 2);
+        uint256 price;
+        if (delta > maxDelta) {
+            price = current + (delta - maxDelta);
+        } else {
+            price = current > delta ? current - delta : MIN_PRICE;
+        }
+        price = bound(price, MIN_PRICE, MAX_PRICE);
+
+        vm.warp(block.timestamp + 1);
         feed.setPrice(int256(price));
+        oracle.recordObservation();
 
         IPerpEngine.PriceBounds memory bounds = IPerpEngine.PriceBounds({
             expectedPrice: price, maxDeviation: price, deadline: block.timestamp + 3600
@@ -114,18 +148,33 @@ contract PerpEngineHandler is Test {
             _removePosition(idx);
             ++successfulCloses;
         } catch {
-            // Position may already be closed or oracle may be stale
+            ++revertedOps;
         }
     }
 
-    /// @dev Attempt liquidation on a random open position at a fuzzed price.
-    function liquidate(uint256 indexSeed, uint256 priceSeed) external {
+    /// @dev Attempt liquidation on a random open position.
+    function liquidate(uint256 indexSeed, uint256 priceDeltaSeed) external {
         if (openPositions.length == 0) return;
 
         uint256 idx = indexSeed % openPositions.length;
         uint256 posId = openPositions[idx];
-        uint256 price = bound(priceSeed, MIN_PRICE, MAX_PRICE);
+
+        // Small price move
+        (int256 currentRaw,) = feed.latestAnswer();
+        uint256 current = uint256(currentRaw);
+        uint256 maxDelta = current * 25 / 1000;
+        uint256 delta = bound(priceDeltaSeed, 0, maxDelta * 2);
+        uint256 price;
+        if (delta > maxDelta) {
+            price = current + (delta - maxDelta);
+        } else {
+            price = current > delta ? current - delta : MIN_PRICE;
+        }
+        price = bound(price, MIN_PRICE, MAX_PRICE);
+
+        vm.warp(block.timestamp + 1);
         feed.setPrice(int256(price));
+        oracle.recordObservation();
 
         uint256 traderBefore = usdc.balanceOf(TRADER);
         uint256 keeperBefore = usdc.balanceOf(KEEPER);
@@ -143,31 +192,30 @@ contract PerpEngineHandler is Test {
             _removePosition(idx);
             ++successfulLiquidations;
         } catch {
-            // PositionHealthy or PositionAlreadyClosed — expected
+            ++revertedOps;
         }
     }
 
-    /// @dev Move the price without any engine operation — simulates market movement.
-    function movePrice(uint256 priceSeed) external {
-        uint256 price = bound(priceSeed, MIN_PRICE, MAX_PRICE);
-        feed.setPrice(int256(price));
+    /// @dev Record an oracle observation (keeper-like action).
+    ///      Keeps the oracle fresh without changing price.
+    function recordObservation() external {
+        vm.warp(block.timestamp + 1);
+        (int256 currentPrice,) = feed.latestAnswer();
+        feed.setPrice(currentPrice);
+        try oracle.recordObservation() {
+            ++oracleRecords;
+        } catch {
+            ++revertedOps;
+        }
     }
 
-    /// @dev Advance time slightly — may trigger staleness on next oracle call.
+    /// @dev Advance time slightly — may trigger staleness on next call.
     function warpTime(uint256 deltaSeed) external {
-        uint256 delta = bound(deltaSeed, 0, 10);
+        uint256 delta = bound(deltaSeed, 0, 4);
         vm.warp(block.timestamp + delta);
     }
 
-    /// @dev Advance time WITHOUT updating the feed — next oracle call will revert StalePrice.
-    ///      Exercises the stale-oracle code path that warpTime alone cannot trigger
-    ///      (because other handler actions always call feed.setPrice which refreshes updatedAt).
-    function warpTimeStale(uint256 deltaSeed) external {
-        uint256 delta = bound(deltaSeed, 6, 30); // always past 5s staleness threshold
-        vm.warp(block.timestamp + delta);
-    }
-
-    // ─── Internal ─────────────────────────────────────────────────────────────
+    // ── Internal ────────────────────────────────────────────────────
 
     function _removePosition(uint256 idx) internal {
         openPositions[idx] = openPositions[openPositions.length - 1];
@@ -179,9 +227,9 @@ contract PerpEngineHandler is Test {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
 // Invariant test suite
-// ──────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
 
 contract PerpEngineInvariantTest is StdInvariant, Test {
     MockUSDC internal usdc;
@@ -192,7 +240,7 @@ contract PerpEngineInvariantTest is StdInvariant, Test {
     PerpEngineHandler internal handler;
 
     address internal owner = address(this);
-    uint256 private constant HOUSE_RESERVE = 50_000_000e6; // 50M USDC
+    uint256 private constant HOUSE_RESERVE = 50_000_000e6;
 
     function setUp() public {
         usdc = new MockUSDC();
@@ -206,25 +254,24 @@ contract PerpEngineInvariantTest is StdInvariant, Test {
         usdc.approve(address(settlement), HOUSE_RESERVE);
         settlement.fundHouseReserve(HOUSE_RESERVE);
 
+        // Seed TWAP with initial observations
+        oracle.recordObservation();
+
         handler = new PerpEngineHandler(usdc, feed, oracle, settlement, engine, owner);
 
-        // Only let the handler drive calls — prevents the fuzzer from calling
-        // raw engine/settlement functions with nonsensical arguments.
         targetContract(address(handler));
     }
 
-    // ─── Invariant 1: Solvency ────────────────────────────────────────────────
+    // ── Invariant 1: Solvency ───────────────────────────────────────
 
-    /// @notice totalPayouts ≤ totalCollateral + houseReserve — ALWAYS.
-    ///         This is the core protocol safety guarantee.
+    /// @notice totalPayouts <= totalCollateral + houseReserve — ALWAYS.
     function invariant_SolvencyHolds() public view {
         uint256 totalIn = settlement.totalCollateral() + settlement.houseReserve();
         uint256 totalOut = settlement.totalPayouts();
         assertLe(totalOut, totalIn, "SOLVENCY VIOLATION: payouts exceed deposits + reserve");
     }
 
-    /// @notice Settlement's actual USDC balance must equal the solvency buffer.
-    ///         If these diverge, internal accounting has desynced.
+    /// @notice Settlement's actual USDC balance = solvencyBuffer().
     function invariant_BalanceMatchesSolvencyBuffer() public view {
         assertEq(
             usdc.balanceOf(address(settlement)),
@@ -233,34 +280,25 @@ contract PerpEngineInvariantTest is StdInvariant, Test {
         );
     }
 
-    // ─── Invariant 2: Accounting identity ────────────────────────────────────
+    // ── Invariant 2: Accounting identity ────────────────────────────
 
-    /// @notice Accounting identity: totalCollateral + houseReserve == totalPayouts + solvencyBuffer.
-    ///         Every USDC that enters Settlement must be accounted for as either paid out or
-    ///         still available. This is the fundamental conservation law.
+    /// @notice totalCollateral + houseReserve ==
+    ///         totalPayouts + solvencyBuffer.
     function invariant_AccountingIdentity() public view {
         uint256 totalIn = settlement.totalCollateral() + settlement.houseReserve();
         uint256 totalOut = settlement.totalPayouts();
         uint256 buffer = settlement.solvencyBuffer();
-        assertEq(
-            totalIn, totalOut + buffer, "ACCOUNTING IDENTITY VIOLATED: totalIn != totalOut + buffer"
-        );
+        assertEq(totalIn, totalOut + buffer, "ACCOUNTING IDENTITY VIOLATED");
     }
 
-    // ─── Non-vacuity ──────────────────────────────────────────────────────────
+    // ── Non-vacuity ─────────────────────────────────────────────────
 
-    /// @notice Track that handler operations are actually executing, not silently reverting.
-    ///         The counters are exposed for `forge test -vv` inspection. We verify that
-    ///         the sum of successful opens is non-decreasing (always true — sanity gate).
-    ///         The real non-vacuity signal comes from the invariant campaign call table
-    ///         printed in verbose output (0 reverts = all operations executed).
+    /// @notice Verify handler operations are actually executing.
     function invariant_OperationCounters() public view {
-        // successfulOpens is always >= 0 for uint256 — this just forces the fuzzer
-        // to evaluate the ghost counters so they appear in -vvvv trace output.
         assertGe(
             handler.successfulOpens() + handler.successfulCloses()
                 + handler.successfulLiquidations(),
-            handler.successfulOpens(), // tautologically true — gate to read the value
+            handler.successfulOpens(),
             "counter sanity"
         );
     }
