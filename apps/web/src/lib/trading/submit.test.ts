@@ -13,11 +13,10 @@ vi.mock("@/lib/aa/client", () => ({
   estimateFeesPerGas: vi.fn(),
 }));
 
-vi.mock("@/lib/aa/signer", () => ({
-  buildKernelCallData: vi.fn().mockReturnValue("0xkernel"),
-  buildUserOp: vi.fn().mockResolvedValue({ sender: "0x1", nonce: 0n }),
-  signUserOp: vi.fn().mockResolvedValue({ sender: "0x1", nonce: 0n, signature: "0xsig" }),
-  submitUserOp: vi.fn().mockResolvedValue("0xophash"),
+vi.mock("@/lib/aa/account", () => ({
+  getSmartAccountClient: vi.fn().mockResolvedValue({
+    sendUserOperation: vi.fn().mockResolvedValue("0xophash"),
+  }),
 }));
 
 vi.mock("@/lib/aa/session-key", () => ({
@@ -27,7 +26,6 @@ vi.mock("@/lib/aa/session-key", () => ({
 
 import { publicClient } from "@/lib/aa/client";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
-import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
 
 const mockReadContract = vi.mocked(publicClient.readContract);
 const mockGetBlock = vi.mocked(publicClient.getBlock);
@@ -40,7 +38,7 @@ const MOCK_SESSION = {
   privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as `0x${string}`,
   address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
   validUntil: Math.floor(Date.now() / 1000) + 3600,
-  validatorAddress: sessionKeyValidatorAddress[6343],
+  validatorAddress: "0xB5eA8ABFf1bd18Ceb9EE5b40a55d832Bbb5D1B44" as `0x${string}`,
 };
 
 beforeEach(() => {
@@ -77,7 +75,7 @@ describe("openTrade", () => {
         isLong: true,
         collateral: 1_000_000n,
         leverage: 5n,
-        accountAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
       }),
     ).rejects.toThrow("No active session key");
   });
@@ -89,7 +87,7 @@ describe("openTrade", () => {
         isLong: true,
         collateral: 1_000_000n,
         leverage: 5n,
-        accountAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
       }),
     ).rejects.toThrow("Session key expired");
   });
@@ -99,7 +97,7 @@ describe("openTrade", () => {
       isLong: true,
       collateral: 1_000_000n,
       leverage: 5n,
-      accountAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
     });
     expect(hash).toBe("0xophash");
   });
@@ -111,7 +109,7 @@ describe("closeTrade", () => {
     await expect(
       closeTrade({
         positionId: 1n,
-        accountAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
       }),
     ).rejects.toThrow("Session key expired");
   });
@@ -119,7 +117,7 @@ describe("closeTrade", () => {
   it("returns opHash on success", async () => {
     const hash = await closeTrade({
       positionId: 1n,
-      accountAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
     });
     expect(hash).toBe("0xophash");
   });

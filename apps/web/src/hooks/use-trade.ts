@@ -38,7 +38,6 @@ export function useTrade(accountAddress: Address | undefined): UseTradeReturn {
           isLong,
           collateral: DEFAULT_COLLATERAL,
           leverage,
-          accountAddress,
         });
         setPendingOpHash(opHash);
 

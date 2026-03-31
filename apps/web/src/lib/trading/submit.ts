@@ -1,7 +1,7 @@
 "use client";
 
 import { encodeFunctionData, http } from "viem";
-import type { Address, Hex } from "viem";
+import type { Hex } from "viem";
 import { createBundlerClient } from "viem/account-abstraction";
 import {
   perpEngineAbi,
@@ -11,12 +11,7 @@ import {
 } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient } from "@/lib/aa/client";
-import {
-  buildKernelCallData,
-  buildUserOp,
-  signUserOp,
-  submitUserOp,
-} from "@/lib/aa/signer";
+import { getSmartAccountClient } from "@/lib/aa/account";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
 
 if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
@@ -48,12 +43,10 @@ export type OpenTradeParams = {
   isLong: boolean;
   collateral: bigint;
   leverage: bigint;
-  accountAddress: Address;
 };
 
 export type CloseTradeParams = {
   positionId: bigint;
-  accountAddress: Address;
 };
 
 export async function getCurrentPriceBounds(): Promise<PriceBounds> {
@@ -78,35 +71,35 @@ function requireActiveSession() {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<Hex> {
-  const session = requireActiveSession();
+  requireActiveSession();
   const bounds = await getCurrentPriceBounds();
 
-  const innerCallData = encodeFunctionData({
+  const tradeCallData = encodeFunctionData({
     abi: perpEngineAbi,
     functionName: "openPosition",
     args: [params.isLong, params.collateral, params.leverage, bounds],
   });
-  const kernelCallData = buildKernelCallData(PERP_ENGINE, innerCallData);
 
-  const userOp = await buildUserOp(params.accountAddress, kernelCallData, session);
-  const signedOp = await signUserOp(userOp, session);
-  return submitUserOp(signedOp);
+  const client = await getSmartAccountClient();
+  return client.sendUserOperation({
+    calls: [{ to: PERP_ENGINE, data: tradeCallData, value: 0n }],
+  });
 }
 
 export async function closeTrade(params: CloseTradeParams): Promise<Hex> {
-  const session = requireActiveSession();
+  requireActiveSession();
   const bounds = await getCurrentPriceBounds();
 
-  const innerCallData = encodeFunctionData({
+  const tradeCallData = encodeFunctionData({
     abi: perpEngineAbi,
     functionName: "closePosition",
     args: [params.positionId, bounds],
   });
-  const kernelCallData = buildKernelCallData(PERP_ENGINE, innerCallData);
 
-  const userOp = await buildUserOp(params.accountAddress, kernelCallData, session);
-  const signedOp = await signUserOp(userOp, session);
-  return submitUserOp(signedOp);
+  const client = await getSmartAccountClient();
+  return client.sendUserOperation({
+    calls: [{ to: PERP_ENGINE, data: tradeCallData, value: 0n }],
+  });
 }
 
 export async function waitForOp(opHash: Hex): Promise<void> {
