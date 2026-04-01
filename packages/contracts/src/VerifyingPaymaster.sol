@@ -7,10 +7,14 @@ import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOp
 import { IVerifyingPaymaster } from "./interfaces/IVerifyingPaymaster.sol";
 
 /// @title VerifyingPaymaster
-/// @notice Sponsors gas for trading UserOperations (openPosition/closePosition on PerpEngine)
-///         and delegation UserOperations (USDC approve + grantSession).
-///         Supports Kernel v3 ERC-7579 execute(bytes32,bytes) format for both single and
-///         batch calls.
+/// @notice Sponsors gas for whitelisted UserOperations. Supports Kernel v3 ERC-7579
+///         execute(bytes32,bytes) format for both single and batch calls.
+///
+///         Whitelisted calls (see _requireAllowedCall):
+///         1. allowedTarget (PerpEngine): openPosition, closePosition
+///         2. mockUsdc: approve (spender must be allowedTarget), faucet
+///         3. sessionKeyValidator: grantSession (target must be allowedTarget), revokeSession
+///         4. sender (self-call): installValidations (SECONDARY + SKV), installModule (type 1, SKV)
 contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -260,10 +264,10 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
 
     /// @dev Revert if a call is not in the allowed whitelist.
     ///      Validates both (target, selector) and critical call arguments:
-    ///      - PerpEngine: openPosition / closePosition
-    ///      - MockUSDC.approve: spender must be allowedTarget (PerpEngine)
-    ///      - SessionKeyValidator.grantSession: targetContract must be allowedTarget (PerpEngine)
-    ///      - sender.installValidations: vIds[0] must be 0x01||sessionKeyValidator (SECONDARY type)
+    ///      - allowedTarget (PerpEngine): openPosition / closePosition
+    ///      - MockUSDC: approve (spender must be allowedTarget), faucet
+    ///      - SessionKeyValidator: grantSession (target must be allowedTarget), revokeSession
+    ///      - sender: installValidations (SECONDARY + SKV), installModule (type 1, SKV)
     function _requireAllowedCall(address target, bytes memory callData, address sender)
         internal
         view

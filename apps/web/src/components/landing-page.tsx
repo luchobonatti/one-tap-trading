@@ -9,7 +9,7 @@ type Props = {
 const FEATURES = [
   { icon: "⚡", title: "Zero popups", desc: "Sign once, trade forever" },
   { icon: "🔥", title: "10ms blocks", desc: "MegaETH speed" },
-  { icon: "🚀", title: "1-tap leverage", desc: "Up to 30× fuel" },
+  { icon: "🚀", title: "1-tap leverage", desc: "Up to 20× fuel" },
 ] as const;
 
 type Star = { id: string; left: string; top: string; size: number; opacity: number; delay: string };

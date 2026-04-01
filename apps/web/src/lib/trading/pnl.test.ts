@@ -51,10 +51,10 @@ describe("calculatePnL", () => {
     expect(pnl).toBe(100_000n);
   });
 
-  it("leverage 30x long: pnl = (currentPrice - entryPrice) * collateral * leverage / entryPrice", () => {
+  it("leverage 20x long: pnl = (currentPrice - entryPrice) * collateral * leverage / entryPrice", () => {
     const current = 2066_60000000n;
-    const pnl = calculatePnL(ENTRY, current, COLLATERAL, 30n, true);
-    const expected = ((current - ENTRY) * (COLLATERAL * 30n)) / ENTRY;
+    const pnl = calculatePnL(ENTRY, current, COLLATERAL, 20n, true);
+    const expected = ((current - ENTRY) * (COLLATERAL * 20n)) / ENTRY;
     expect(pnl).toBe(expected);
   });
 });

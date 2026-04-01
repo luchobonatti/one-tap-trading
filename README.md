@@ -35,13 +35,13 @@ MegaETH Carrot testnet (chain ID 6343):
 
 | Contract | Address |
 |----------|---------|
-| PerpEngine | `0xe35486669A5D905CF18D4af477Aaac08dF93Eab0` |
-| Settlement | `0x24354D1022E13f39f330Bbf2210edEEd21422eD5` |
-| PriceOracle | `0x7FBe2a83113A6374964d6fe25C000402471079d4` |
-| MockUSDC | `0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB` |
-| MockPriceFeed | `0xd152AaBf6e4dA27004dC4a4B29da4a7754318469` |
-| SessionKeyValidator | `0x672B55126649951AfbbD13d82015691BC8BAD007` |
-| VerifyingPaymaster | `0xbcB4B1FdEC3958BEAc5542B4752f7FAf4BcaF226` |
+| PerpEngine | `0x3b94b364697714620c4596e1c51e5b24a0964204` |
+| Settlement | `0x24354d1022e13f39f330bbf2210edeed21422ed5` |
+| PriceOracle | `0xf5e08914893f87f687f6f39799c32ed2210f410a` |
+| RedStoneAdapter | `0x3812e928c1d55de3707c93d8bc74026a3249134d` |
+| MockUSDC | `0xbd2e92b39081a9dc541a776b5d7b7e0051851ccb` |
+| SessionKeyValidator | `0xb5ea8abff1bd18ceb9ee5b40a55d832bbb5d1b44` |
+| VerifyingPaymaster | `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35` |
 
 Full deployment artifact: [`packages/contracts/deployments/6343.json`](packages/contracts/deployments/6343.json)
 
