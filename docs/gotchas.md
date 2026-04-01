@@ -113,8 +113,8 @@ The lint is configured in `Cargo.toml` but the compiler does not enforce it at t
 **Current paymaster address: `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35`.**
 Whitelisted calls: `openPosition`, `closePosition` on PerpEngine; `approve` (spender must be `allowedTarget`), `faucet` on MockUSDC; `grantSession`, `revokeSession` on SessionKeyValidator; `installValidations`, `installModule` on sender (self-call). See `VerifyingPaymaster._requireAllowedCall()` for the full validation logic.
 
-**Known issue: approve spender mismatch (LONG trades cannot execute).**
-The Paymaster validates that the USDC approve spender is `allowedTarget` (PerpEngine), but `Settlement.depositCollateral()` is who calls `safeTransferFrom`. The approve to PerpEngine is useless. Fixing this requires adding a separate `approveSpender` field to the Paymaster and redeploying. See issue tracker for the fix PR.
+**Known issue: approve spender mismatch (opening any position cannot execute).**
+The Paymaster validates that the USDC approve spender is `allowedTarget` (PerpEngine), but `Settlement.depositCollateral()` is who calls `safeTransferFrom`. The approve to PerpEngine is useless, so opening any position (long or short) via `openPosition()` will fail. Fixing this requires adding a separate `approveSpender` field to the Paymaster and redeploying. See issue tracker for the fix PR.
 
 ---
 

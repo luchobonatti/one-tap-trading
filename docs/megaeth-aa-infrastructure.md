@@ -81,6 +81,8 @@ Full artifact: [`packages/contracts/deployments/6343.json`](../packages/contract
 | RedStoneAdapter | `0x3812e928c1d55de3707c93d8bc74026a3249134d` |
 | MockUSDC | `0xbd2e92b39081a9dc541a776b5d7b7e0051851ccb` |
 
+Note: `MockPriceFeed` (`0x85f5dc082ca674f5421fe93e106022a2a1ba1a30`) remains deployed but is deprecated — replaced by `RedStoneAdapter` in Phase 2j.
+
 ---
 
 ## Trading Flow (end-to-end)
