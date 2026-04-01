@@ -33,6 +33,32 @@ const MAX_DEVIATION_BPS = 200n;
 const BPS_DENOM = 10_000n;
 const DEADLINE_SECONDS = 60n;
 
+const PRICE_RETRY_ATTEMPTS = 3;
+const PRICE_RETRY_BASE_DELAY_MS = 500;
+
+function isTransientOracleError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("StalePrice") || msg.includes("reverted");
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries: number; baseDelayMs: number; retryIf: (err: unknown) => boolean },
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= opts.retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt === opts.retries || !opts.retryIf(err)) throw err;
+      const delay = opts.baseDelayMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 export type PriceBounds = {
   expectedPrice: bigint;
   maxDeviation: bigint;
@@ -51,11 +77,19 @@ export type CloseTradeParams = {
 
 export async function getCurrentPriceBounds(): Promise<PriceBounds> {
   const [[price], { timestamp }] = await Promise.all([
-    publicClient.readContract({
-      abi: priceOracleAbi,
-      address: PRICE_ORACLE,
-      functionName: "getPrice",
-    }),
+    withRetry(
+      () =>
+        publicClient.readContract({
+          abi: priceOracleAbi,
+          address: PRICE_ORACLE,
+          functionName: "getPrice",
+        }),
+      {
+        retries: PRICE_RETRY_ATTEMPTS,
+        baseDelayMs: PRICE_RETRY_BASE_DELAY_MS,
+        retryIf: isTransientOracleError,
+      },
+    ),
     publicClient.getBlock(),
   ]);
   const maxDeviation = (price * MAX_DEVIATION_BPS) / BPS_DENOM;
