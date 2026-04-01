@@ -114,7 +114,7 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
   const approveCallData = encodeFunctionData({
     abi: mockUsdcAbi,
     functionName: "approve",
-    args: [settlementAddress[6343], maxUint256],
+    args: [perpEngineAddress[6343], maxUint256],
   });
 
   const grantCallData = encodeFunctionData({
