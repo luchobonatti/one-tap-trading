@@ -161,9 +161,17 @@ describe("openTrade", () => {
 
   it("uses session key signer, not passkey client", async () => {
     await openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n });
+
     expect(mockBuildKernelCallData).toHaveBeenCalledOnce();
-    expect(mockBuildUserOp).toHaveBeenCalledOnce();
-    expect(mockSignUserOp).toHaveBeenCalledOnce();
+    expect(mockBuildUserOp).toHaveBeenCalledWith(
+      "0xSmartAccountAddress",
+      "0xcalldata",
+      MOCK_SESSION,
+    );
+    expect(mockSignUserOp).toHaveBeenCalledWith(
+      { sender: "0x", callData: "0x" },
+      MOCK_SESSION,
+    );
     expect(mockSubmitUserOp).toHaveBeenCalledOnce();
   });
 });
@@ -188,9 +196,17 @@ describe("closeTrade", () => {
 
   it("uses session key signer, not passkey client", async () => {
     await closeTrade({ positionId: 1n });
+
     expect(mockBuildKernelCallData).toHaveBeenCalledOnce();
-    expect(mockBuildUserOp).toHaveBeenCalledOnce();
-    expect(mockSignUserOp).toHaveBeenCalledOnce();
+    expect(mockBuildUserOp).toHaveBeenCalledWith(
+      "0xSmartAccountAddress",
+      "0xcalldata",
+      MOCK_SESSION,
+    );
+    expect(mockSignUserOp).toHaveBeenCalledWith(
+      { sender: "0x", callData: "0x" },
+      MOCK_SESSION,
+    );
     expect(mockSubmitUserOp).toHaveBeenCalledOnce();
   });
 });
