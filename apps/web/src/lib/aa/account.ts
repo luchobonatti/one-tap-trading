@@ -66,6 +66,18 @@ export function hasStoredAccount(): boolean {
   return localStorage.getItem(VALIDATOR_STORAGE_KEY) !== null;
 }
 
+export async function getSmartAccountAddress(): Promise<Address> {
+  const serialized = localStorage.getItem(VALIDATOR_STORAGE_KEY);
+  if (serialized === null) throw new Error("No stored account — create a passkey account first");
+  try {
+    const { account } = await loadAccountFromSerialized(serialized);
+    return account.address;
+  } catch {
+    localStorage.removeItem(VALIDATOR_STORAGE_KEY);
+    throw new Error("No stored account — create a passkey account first");
+  }
+}
+
 export async function getSmartAccountClient() {
   const serialized = localStorage.getItem(VALIDATOR_STORAGE_KEY);
   if (serialized === null) throw new Error("No stored account — create a passkey account first");

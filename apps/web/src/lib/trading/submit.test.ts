@@ -14,9 +14,7 @@ vi.mock("@/lib/aa/client", () => ({
 }));
 
 vi.mock("@/lib/aa/account", () => ({
-  getSmartAccountClient: vi.fn().mockResolvedValue({
-    sendUserOperation: vi.fn().mockResolvedValue("0xophash"),
-  }),
+  getSmartAccountAddress: vi.fn().mockResolvedValue("0xSmartAccountAddress"),
 }));
 
 vi.mock("@/lib/aa/session-key", () => ({
@@ -24,16 +22,28 @@ vi.mock("@/lib/aa/session-key", () => ({
   isSessionExpired: vi.fn(),
 }));
 
+vi.mock("@/lib/aa/signer", () => ({
+  buildKernelCallData: vi.fn().mockReturnValue("0xcalldata"),
+  buildUserOp: vi.fn().mockResolvedValue({ sender: "0x", callData: "0x" }),
+  signUserOp: vi.fn().mockResolvedValue({ sender: "0x", callData: "0x", signature: "0xsig" }),
+  submitUserOp: vi.fn().mockResolvedValue("0xophash"),
+}));
+
 import { publicClient } from "@/lib/aa/client";
-import { getSmartAccountClient } from "@/lib/aa/account";
+import { getSmartAccountAddress } from "@/lib/aa/account";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
+import { buildKernelCallData, buildUserOp, signUserOp, submitUserOp } from "@/lib/aa/signer";
 import { sessionKeyValidatorAddress } from "@one-tap/shared-types";
 
 const mockReadContract = vi.mocked(publicClient.readContract);
 const mockGetBlock = vi.mocked(publicClient.getBlock);
-const mockGetSmartAccountClient = vi.mocked(getSmartAccountClient);
+const mockGetAddress = vi.mocked(getSmartAccountAddress);
 const mockLoadSession = vi.mocked(loadSessionKey);
 const mockIsExpired = vi.mocked(isSessionExpired);
+const mockBuildKernelCallData = vi.mocked(buildKernelCallData);
+const mockBuildUserOp = vi.mocked(buildUserOp);
+const mockSignUserOp = vi.mocked(signUserOp);
+const mockSubmitUserOp = vi.mocked(submitUserOp);
 
 const CHAIN_TIMESTAMP = 1_800_000_000n;
 
@@ -48,11 +58,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockReadContract.mockResolvedValue([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
   mockGetBlock.mockResolvedValue({ timestamp: CHAIN_TIMESTAMP } as unknown as never);
-  mockGetSmartAccountClient.mockResolvedValue({
-    sendUserOperation: vi.fn().mockResolvedValue("0xophash"),
-  } as never);
+  mockGetAddress.mockResolvedValue("0xSmartAccountAddress" as `0x${string}`);
   mockLoadSession.mockReturnValue(MOCK_SESSION);
   mockIsExpired.mockReturnValue(false);
+  mockBuildKernelCallData.mockReturnValue("0xcalldata" as `0x${string}`);
+  mockBuildUserOp.mockResolvedValue({ sender: "0x", callData: "0x" } as never);
+  mockSignUserOp.mockResolvedValue({ sender: "0x", callData: "0x", signature: "0xsig" } as never);
+  mockSubmitUserOp.mockResolvedValue("0xophash" as `0x${string}`);
 });
 
 describe("getCurrentPriceBounds", () => {
@@ -97,9 +109,7 @@ describe("getCurrentPriceBounds", () => {
       mockReadContract.mockRejectedValue(staleError);
 
       const boundsPromise = getCurrentPriceBounds();
-      // Prevent Node from reporting an unhandled rejection while timers advance
       const safePromise = boundsPromise.catch(() => "rejected");
-      // Advance past all 3 retry delays: 500ms + 1000ms + 2000ms
       await vi.advanceTimersByTimeAsync(500);
       await vi.advanceTimersByTimeAsync(1000);
       await vi.advanceTimersByTimeAsync(2000);
@@ -135,8 +145,8 @@ describe("openTrade", () => {
     ).rejects.toThrow("Session key expired");
   });
 
-  it("throws if smart account client unavailable", async () => {
-    mockGetSmartAccountClient.mockRejectedValueOnce(
+  it("throws if smart account address unavailable", async () => {
+    mockGetAddress.mockRejectedValueOnce(
       new Error("No stored account — create a passkey account first"),
     );
     await expect(
@@ -148,6 +158,22 @@ describe("openTrade", () => {
     const hash = await openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n });
     expect(hash).toBe("0xophash");
   });
+
+  it("uses session key signer, not passkey client", async () => {
+    await openTrade({ isLong: true, collateral: 1_000_000n, leverage: 5n });
+
+    expect(mockBuildKernelCallData).toHaveBeenCalledOnce();
+    expect(mockBuildUserOp).toHaveBeenCalledWith(
+      "0xSmartAccountAddress",
+      "0xcalldata",
+      MOCK_SESSION,
+    );
+    expect(mockSignUserOp).toHaveBeenCalledWith(
+      { sender: "0x", callData: "0x" },
+      MOCK_SESSION,
+    );
+    expect(mockSubmitUserOp).toHaveBeenCalledOnce();
+  });
 });
 
 describe("closeTrade", () => {
@@ -156,8 +182,8 @@ describe("closeTrade", () => {
     await expect(closeTrade({ positionId: 1n })).rejects.toThrow("Session key expired");
   });
 
-  it("throws if smart account client unavailable", async () => {
-    mockGetSmartAccountClient.mockRejectedValueOnce(
+  it("throws if smart account address unavailable", async () => {
+    mockGetAddress.mockRejectedValueOnce(
       new Error("No stored account — create a passkey account first"),
     );
     await expect(closeTrade({ positionId: 1n })).rejects.toThrow("No stored account");
@@ -166,5 +192,21 @@ describe("closeTrade", () => {
   it("returns opHash on success", async () => {
     const hash = await closeTrade({ positionId: 1n });
     expect(hash).toBe("0xophash");
+  });
+
+  it("uses session key signer, not passkey client", async () => {
+    await closeTrade({ positionId: 1n });
+
+    expect(mockBuildKernelCallData).toHaveBeenCalledOnce();
+    expect(mockBuildUserOp).toHaveBeenCalledWith(
+      "0xSmartAccountAddress",
+      "0xcalldata",
+      MOCK_SESSION,
+    );
+    expect(mockSignUserOp).toHaveBeenCalledWith(
+      { sender: "0x", callData: "0x" },
+      MOCK_SESSION,
+    );
+    expect(mockSubmitUserOp).toHaveBeenCalledOnce();
   });
 });

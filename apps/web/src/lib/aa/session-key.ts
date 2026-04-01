@@ -158,18 +158,19 @@ export async function delegateSessionKey(spendLimitUsdc: string): Promise<Hex> {
 
   // installModule(1, SKV, initData) installs the validator AND grants
   // allowedSelectors[vId][execute_selector] = true in one call.
-  // initData layout: hookAddress(20B raw) || ABI-encoded(selectorData, validatorData, hookData)
+  // initData layout: hookAddress(20B raw) || ABI-encoded(validatorData, hookData, selectorData)
   // selectorData must be exactly 4 bytes so Kernel calls _grantAccess internally.
+  // Order MUST match Kernel's expected decoding: validatorData, hookData, selectorData.
   const HOOK_MODULE_INSTALLED = "0x0000000000000000000000000000000000000001" as const;
   const installModuleInitData = concat([
     HOOK_MODULE_INSTALLED,
     encodeAbiParameters(
       [
-        { type: "bytes", name: "selectorData" },
         { type: "bytes", name: "validatorData" },
         { type: "bytes", name: "hookData" },
+        { type: "bytes", name: "selectorData" },
       ],
-      ["0xe9ae5c53", "0x", "0x"],
+      ["0x", "0x", "0xe9ae5c53"],
     ),
   ]);
   const installModuleCallData = encodeFunctionData({
