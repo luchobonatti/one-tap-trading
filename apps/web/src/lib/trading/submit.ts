@@ -11,8 +11,9 @@ import {
 } from "@one-tap/shared-types";
 import { megaEthCarrot } from "@/lib/aa/chain";
 import { publicClient } from "@/lib/aa/client";
-import { getSmartAccountClient } from "@/lib/aa/account";
+import { getSmartAccountAddress } from "@/lib/aa/account";
 import { loadSessionKey, isSessionExpired } from "@/lib/aa/session-key";
+import { buildKernelCallData, buildUserOp, signUserOp, submitUserOp } from "@/lib/aa/signer";
 
 if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
   throw new Error(
@@ -105,8 +106,11 @@ function requireActiveSession() {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<Hex> {
-  requireActiveSession(); // gate: ensures approve+session are set; trade itself uses root validator
-  const bounds = await getCurrentPriceBounds();
+  const session = requireActiveSession();
+  const [bounds, sender] = await Promise.all([
+    getCurrentPriceBounds(),
+    getSmartAccountAddress(),
+  ]);
 
   const tradeCallData = encodeFunctionData({
     abi: perpEngineAbi,
@@ -114,15 +118,18 @@ export async function openTrade(params: OpenTradeParams): Promise<Hex> {
     args: [params.isLong, params.collateral, params.leverage, bounds],
   });
 
-  const client = await getSmartAccountClient();
-  return client.sendUserOperation({
-    calls: [{ to: PERP_ENGINE, data: tradeCallData, value: 0n }],
-  });
+  const callData = buildKernelCallData(PERP_ENGINE, tradeCallData);
+  const userOp = await buildUserOp(sender, callData, session);
+  const signed = await signUserOp(userOp, session);
+  return submitUserOp(signed);
 }
 
 export async function closeTrade(params: CloseTradeParams): Promise<Hex> {
-  requireActiveSession();
-  const bounds = await getCurrentPriceBounds();
+  const session = requireActiveSession();
+  const [bounds, sender] = await Promise.all([
+    getCurrentPriceBounds(),
+    getSmartAccountAddress(),
+  ]);
 
   const tradeCallData = encodeFunctionData({
     abi: perpEngineAbi,
@@ -130,10 +137,10 @@ export async function closeTrade(params: CloseTradeParams): Promise<Hex> {
     args: [params.positionId, bounds],
   });
 
-  const client = await getSmartAccountClient();
-  return client.sendUserOperation({
-    calls: [{ to: PERP_ENGINE, data: tradeCallData, value: 0n }],
-  });
+  const callData = buildKernelCallData(PERP_ENGINE, tradeCallData);
+  const userOp = await buildUserOp(sender, callData, session);
+  const signed = await signUserOp(userOp, session);
+  return submitUserOp(signed);
 }
 
 export async function waitForOp(opHash: Hex): Promise<void> {
