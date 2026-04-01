@@ -6,6 +6,6 @@
   "PerpEngine": "0x3b94b364697714620c4596e1c51e5b24a0964204",
   "deployer": "0xa69266094eb956a59a32c5f78e8a3faf3ad8adcd",
   "SessionKeyValidator": "0xb5ea8abff1bd18ceb9ee5b40a55d832bbb5d1b44",
-  "VerifyingPaymaster": "0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35",
+  "VerifyingPaymaster": "0x2634A69AA398DF46fB725E46b6b24BB04Bb1Bf24",
   "RedStoneAdapter": "0x3812e928c1d55de3707c93d8bc74026a3249134d"
 }

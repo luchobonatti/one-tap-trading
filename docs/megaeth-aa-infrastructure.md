@@ -69,7 +69,7 @@ Full artifact: [`packages/contracts/deployments/6343.json`](../packages/contract
 |----------|---------|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 | SessionKeyValidator | `0xb5ea8abff1bd18ceb9ee5b40a55d832bbb5d1b44` |
-| VerifyingPaymaster | `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35` |
+| VerifyingPaymaster | `0x2634a69aa398df46fb725e46b6b24bb04bb1bf24` |
 
 ### Core Protocol
 
@@ -136,7 +136,7 @@ struct PriceBounds {
 ### Session key prerequisites
 
 Before any trade, the smart account must have:
-1. Approved USDC spending (`ERC20.approve(spender, amount)`) — **Note:** Settlement is who
-   calls `safeTransferFrom`, but the VerifyingPaymaster currently enforces `spender == PerpEngine`.
-   This is a known mismatch that requires a Paymaster contract update to fix (see `docs/gotchas.md`).
+1. Approved Settlement to spend USDC (`ERC20.approve(Settlement, amount)`) — Settlement is who
+   calls `safeTransferFrom` for collateral deposits. The Paymaster validates `spender == approveSpender`
+   (Settlement), not `allowedTarget` (PerpEngine). Fixed in Phase 2k.
 2. Granted a session key via `SessionKeyValidator.grantSession(...)` (done by `DelegateModal`)

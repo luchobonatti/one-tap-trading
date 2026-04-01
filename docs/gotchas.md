@@ -110,11 +110,11 @@ The lint is configured in `Cargo.toml` but the compiler does not enforce it at t
 **`revokeSession()` must be whitelisted in VerifyingPaymaster.**
 `grantSession` reverts with `SessionAlreadyGranted` if a session is already active. The delegation flow calls `revokeSession()` first — its selector `0xc4605d8c` must be in the paymaster's allowed selectors or you get AA33. Already fixed in the current deployment.
 
-**Current paymaster address: `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35`.**
-Whitelisted calls: `openPosition`, `closePosition` on PerpEngine; `approve` (spender must be `allowedTarget`), `faucet` on MockUSDC; `grantSession`, `revokeSession` on SessionKeyValidator; `installValidations`, `installModule` on sender (self-call). See `VerifyingPaymaster._requireAllowedCall()` for the full validation logic.
+**Current paymaster address: `0x2634a69aa398df46fb725e46b6b24bb04bb1bf24`** (deployed Phase 2k).
+Whitelisted calls: `openPosition`, `closePosition` on PerpEngine; `approve` (spender must be `approveSpender`/Settlement), `faucet` on MockUSDC; `grantSession`, `revokeSession` on SessionKeyValidator; `installValidations`, `installModule` on sender (self-call). See `VerifyingPaymaster._requireAllowedCall()` for the full validation logic.
 
-**Known issue: approve spender mismatch (opening any position cannot execute).**
-The Paymaster validates that the USDC approve spender is `allowedTarget` (PerpEngine), but `Settlement.depositCollateral()` is who calls `safeTransferFrom`. The approve to PerpEngine is useless, so opening any position (long or short) via `openPosition()` will fail. Fixing this requires adding a separate `approveSpender` field to the Paymaster and redeploying. See issue tracker for the fix PR.
+**Approve spender is `approveSpender` (Settlement), not `allowedTarget` (PerpEngine).**
+Phase 2k introduced a dedicated `approveSpender` field because Settlement is the contract that calls `safeTransferFrom` for collateral, not PerpEngine. The delegation flow approves `Settlement` via `session-key.ts`. If you see `TargetNotAllowed` on an approve call, verify the spender matches `approveSpender()` on the Paymaster.
 
 ---
 

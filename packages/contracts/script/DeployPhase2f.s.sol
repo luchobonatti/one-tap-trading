@@ -55,7 +55,7 @@ contract DeployPhase2f is Script {
         vm.startBroadcast(deployerKey);
 
         VerifyingPaymaster paymaster =
-            new VerifyingPaymaster(ENTRY_POINT, perpEngine, usdc, skv, deployer);
+            new VerifyingPaymaster(ENTRY_POINT, perpEngine, usdc, skv, settlement, deployer);
         console.log("New VerifyingPaymaster:", address(paymaster));
 
         paymaster.deposit{ value: INITIAL_DEPOSIT }();

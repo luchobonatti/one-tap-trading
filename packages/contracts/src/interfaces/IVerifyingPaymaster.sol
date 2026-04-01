@@ -28,6 +28,11 @@ interface IVerifyingPaymaster {
     /// @param newValidator The new SessionKeyValidator address.
     event SessionKeyValidatorUpdated(address indexed oldValidator, address indexed newValidator);
 
+    /// @notice Emitted when the approve spender (Settlement) address is updated.
+    /// @param oldSpender The previous approve spender address.
+    /// @param newSpender The new approve spender address.
+    event ApproveSpenderUpdated(address indexed oldSpender, address indexed newSpender);
+
     /// @notice Emitted when the gas allowance per operation is updated.
     /// @param oldAllowance The previous gas allowance per operation.
     /// @param newAllowance The new gas allowance per operation.
@@ -71,6 +76,11 @@ interface IVerifyingPaymaster {
     /// @param newValidator The new SessionKeyValidator address.
     /// @dev Only callable by the owner.
     function setSessionKeyValidator(address newValidator) external;
+
+    /// @notice Update the approve spender address (Settlement).
+    /// @param newSpender The new approve spender address.
+    /// @dev Only callable by the owner.
+    function setApproveSpender(address newSpender) external;
 
     /// @notice Update the maximum gas allowance per UserOperation.
     /// @param newAllowance The new gas allowance per operation.

@@ -40,11 +40,13 @@ contract DeployPhase2c is Script {
 
         address perpEngine = existingJson.readAddress(".PerpEngine");
         address mockUsdc = existingJson.readAddress(".MockUSDC");
+        address settlement = existingJson.readAddress(".Settlement");
 
         console.log("Deployer:   ", deployer);
         console.log("Chain ID:   ", block.chainid);
         console.log("PerpEngine: ", perpEngine);
         console.log("MockUSDC:   ", mockUsdc);
+        console.log("Settlement: ", settlement);
         console.log("EntryPoint: ", ENTRY_POINT);
         console.log("");
         console.log("Old SessionKeyValidator:", existingJson.readAddress(".SessionKeyValidator"));
@@ -58,8 +60,9 @@ contract DeployPhase2c is Script {
         console.log("New SessionKeyValidator:", address(validator));
 
         // ── 2. VerifyingPaymaster (installModule whitelist + 1 Gwei gas cap) ──
-        VerifyingPaymaster paymaster =
-            new VerifyingPaymaster(ENTRY_POINT, perpEngine, mockUsdc, address(validator), deployer);
+        VerifyingPaymaster paymaster = new VerifyingPaymaster(
+            ENTRY_POINT, perpEngine, mockUsdc, address(validator), settlement, deployer
+        );
         console.log("New VerifyingPaymaster: ", address(paymaster));
 
         // ── 3. Fund paymaster deposit ─────────────────────────────────────────

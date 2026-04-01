@@ -71,6 +71,53 @@ describe("getCurrentPriceBounds", () => {
     const bounds = await getCurrentPriceBounds();
     expect(bounds.deadline).toBe(CHAIN_TIMESTAMP + 60n);
   });
+
+  it("retries on transient StalePrice and succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      mockReadContract
+        .mockRejectedValueOnce(new Error("StalePrice(1775050362, 1775050375)"))
+        .mockResolvedValueOnce([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
+
+      const boundsPromise = getCurrentPriceBounds();
+      await vi.advanceTimersByTimeAsync(500);
+      const bounds = await boundsPromise;
+
+      expect(bounds.expectedPrice).toBe(2000_00000000n);
+      expect(mockReadContract).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws after all retries exhausted on StalePrice", async () => {
+    vi.useFakeTimers();
+    try {
+      const staleError = new Error("StalePrice(1, 2)");
+      mockReadContract.mockRejectedValue(staleError);
+
+      const boundsPromise = getCurrentPriceBounds();
+      // Prevent Node from reporting an unhandled rejection while timers advance
+      const safePromise = boundsPromise.catch(() => "rejected");
+      // Advance past all 3 retry delays: 500ms + 1000ms + 2000ms
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
+      await safePromise;
+
+      await expect(boundsPromise).rejects.toThrow("StalePrice");
+      expect(mockReadContract).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry non-stale errors", async () => {
+    mockReadContract.mockRejectedValueOnce(new Error("ABI encoding error"));
+
+    await expect(getCurrentPriceBounds()).rejects.toThrow("ABI encoding error");
+    expect(mockReadContract).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("openTrade", () => {

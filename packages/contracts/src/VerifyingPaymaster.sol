@@ -91,6 +91,11 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     /// @notice SessionKeyValidator address — grantSession() calls are sponsored.
     address public sessionKeyValidator;
 
+    /// @notice The address that USDC approve() spender must match (Settlement).
+    ///         Separated from allowedTarget because PerpEngine receives trading calls
+    ///         but Settlement is who calls safeTransferFrom for collateral.
+    address public approveSpender;
+
     /// @notice Maximum gas cost (in wei) per UserOperation that this paymaster will sponsor.
     uint256 public gasAllowancePerOp;
 
@@ -100,17 +105,19 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     /// @param allowedTarget_      PerpEngine address (trading calls are sponsored here).
     /// @param mockUsdc_           MockUSDC address (approve calls are sponsored here).
     /// @param sessionKeyValidator_ SessionKeyValidator address (grantSession calls sponsored).
+    /// @param approveSpender_     Settlement address (USDC approve spender must match this).
     /// @param owner_              Owner address for administrative functions.
     constructor(
         address entryPoint_,
         address allowedTarget_,
         address mockUsdc_,
         address sessionKeyValidator_,
+        address approveSpender_,
         address owner_
     ) Ownable(owner_) {
         if (
             entryPoint_ == address(0) || allowedTarget_ == address(0) || mockUsdc_ == address(0)
-                || sessionKeyValidator_ == address(0)
+                || sessionKeyValidator_ == address(0) || approveSpender_ == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -118,6 +125,7 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
         allowedTarget = allowedTarget_;
         mockUsdc = mockUsdc_;
         sessionKeyValidator = sessionKeyValidator_;
+        approveSpender = approveSpender_;
         gasAllowancePerOp = DEFAULT_GAS_ALLOWANCE;
     }
 
@@ -213,6 +221,14 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     }
 
     /// @inheritdoc IVerifyingPaymaster
+    function setApproveSpender(address newSpender) external onlyOwner {
+        if (newSpender == address(0)) revert ZeroAddress();
+        address old = approveSpender;
+        approveSpender = newSpender;
+        emit ApproveSpenderUpdated(old, newSpender);
+    }
+
+    /// @inheritdoc IVerifyingPaymaster
     function setGasAllowancePerOp(uint256 newAllowance) external onlyOwner {
         uint256 old = gasAllowancePerOp;
         gasAllowancePerOp = newAllowance;
@@ -265,7 +281,7 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
     /// @dev Revert if a call is not in the allowed whitelist.
     ///      Validates both (target, selector) and critical call arguments:
     ///      - allowedTarget (PerpEngine): openPosition / closePosition
-    ///      - MockUSDC: approve (spender must be allowedTarget), faucet
+    ///      - MockUSDC: approve (spender must be approveSpender/Settlement), faucet
     ///      - SessionKeyValidator: grantSession (target must be allowedTarget), revokeSession
     ///      - sender: installValidations (SECONDARY + SKV), installModule (type 1, SKV)
     function _requireAllowedCall(address target, bytes memory callData, address sender)
@@ -293,7 +309,7 @@ contract VerifyingPaymaster is IPaymaster, IVerifyingPaymaster, Ownable {
                         0xffffffffffffffffffffffffffffffffffffffff
                     )
                 }
-                if (spender != allowedTarget) revert TargetNotAllowed(spender);
+                if (spender != approveSpender) revert TargetNotAllowed(spender);
             } else if (selector == FAUCET_SELECTOR) {
                 // faucet(uint256 amount): 4 + 32 = 36 bytes
                 if (callData.length != 36) revert SelectorNotAllowed(selector);
