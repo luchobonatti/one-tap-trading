@@ -74,25 +74,42 @@ describe("getCurrentPriceBounds", () => {
 
   it("retries on transient StalePrice and succeeds", async () => {
     vi.useFakeTimers();
-    mockReadContract
-      .mockRejectedValueOnce(new Error("StalePrice(1775050362, 1775050375)"))
-      .mockResolvedValueOnce([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
+    try {
+      mockReadContract
+        .mockRejectedValueOnce(new Error("StalePrice(1775050362, 1775050375)"))
+        .mockResolvedValueOnce([2000_00000000n, CHAIN_TIMESTAMP] as unknown as never);
 
-    const boundsPromise = getCurrentPriceBounds();
-    await vi.advanceTimersByTimeAsync(500);
-    const bounds = await boundsPromise;
+      const boundsPromise = getCurrentPriceBounds();
+      await vi.advanceTimersByTimeAsync(500);
+      const bounds = await boundsPromise;
 
-    expect(bounds.expectedPrice).toBe(2000_00000000n);
-    expect(mockReadContract).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
+      expect(bounds.expectedPrice).toBe(2000_00000000n);
+      expect(mockReadContract).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("throws after all retries exhausted on StalePrice", async () => {
-    const staleError = new Error("StalePrice(1, 2)");
-    mockReadContract.mockRejectedValue(staleError);
+    vi.useFakeTimers();
+    try {
+      const staleError = new Error("StalePrice(1, 2)");
+      mockReadContract.mockRejectedValue(staleError);
 
-    await expect(getCurrentPriceBounds()).rejects.toThrow("StalePrice");
-    expect(mockReadContract).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+      const boundsPromise = getCurrentPriceBounds();
+      // Prevent Node from reporting an unhandled rejection while timers advance
+      const safePromise = boundsPromise.catch(() => "rejected");
+      // Advance past all 3 retry delays: 500ms + 1000ms + 2000ms
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
+      await safePromise;
+
+      await expect(boundsPromise).rejects.toThrow("StalePrice");
+      expect(mockReadContract).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not retry non-stale errors", async () => {

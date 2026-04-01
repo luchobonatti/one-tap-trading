@@ -33,12 +33,12 @@ const MAX_DEVIATION_BPS = 200n;
 const BPS_DENOM = 10_000n;
 const DEADLINE_SECONDS = 60n;
 
-const PRICE_RETRY_ATTEMPTS = 3;
+const PRICE_MAX_RETRIES = 3;
 const PRICE_RETRY_BASE_DELAY_MS = 500;
 
 function isTransientOracleError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes("StalePrice") || msg.includes("reverted");
+  return msg.includes("StalePrice");
 }
 
 async function withRetry<T>(
@@ -85,7 +85,7 @@ export async function getCurrentPriceBounds(): Promise<PriceBounds> {
           functionName: "getPrice",
         }),
       {
-        retries: PRICE_RETRY_ATTEMPTS,
+        retries: PRICE_MAX_RETRIES,
         baseDelayMs: PRICE_RETRY_BASE_DELAY_MS,
         retryIf: isTransientOracleError,
       },
