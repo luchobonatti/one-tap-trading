@@ -16,6 +16,7 @@ contract VerifyingPaymasterTest is Test {
     address internal perpEngine = 0xe35486669A5D905CF18D4af477Aaac08dF93Eab0;
     address internal mockUsdc = 0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB;
     address internal sessionKeyValidator = 0x672B55126649951AfbbD13d82015691BC8BAD007;
+    address internal settlement = makeAddr("settlement");
     address internal owner;
     uint256 internal ownerKey;
     address internal user = makeAddr("user");
@@ -35,8 +36,9 @@ contract VerifyingPaymasterTest is Test {
     function setUp() public {
         (owner, ownerKey) = makeAddrAndKey("owner");
         vm.prank(owner);
-        paymaster =
-            new VerifyingPaymaster(entryPoint, perpEngine, mockUsdc, sessionKeyValidator, owner);
+        paymaster = new VerifyingPaymaster(
+            entryPoint, perpEngine, mockUsdc, sessionKeyValidator, settlement, owner
+        );
 
         // Mock EntryPoint deposit/withdraw/balanceOf
         vm.mockCall(entryPoint, abi.encodeWithSignature("depositTo(address)"), abi.encode());
@@ -55,32 +57,51 @@ contract VerifyingPaymasterTest is Test {
         assertEq(paymaster.allowedTarget(), perpEngine);
         assertEq(paymaster.mockUsdc(), mockUsdc);
         assertEq(paymaster.sessionKeyValidator(), sessionKeyValidator);
+        assertEq(paymaster.approveSpender(), settlement);
         assertEq(paymaster.gasAllowancePerOp(), 1_000_000_000_000_000);
         assertEq(paymaster.owner(), owner);
+    }
+
+    function test_Constructor_SetsApproveSpender() public view {
+        assertEq(paymaster.approveSpender(), settlement);
     }
 
     function test_Constructor_ZeroEntryPoint_Reverts() public {
         vm.prank(owner);
         vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
-        new VerifyingPaymaster(address(0), perpEngine, mockUsdc, sessionKeyValidator, owner);
+        new VerifyingPaymaster(
+            address(0), perpEngine, mockUsdc, sessionKeyValidator, settlement, owner
+        );
     }
 
     function test_Constructor_ZeroAllowedTarget_Reverts() public {
         vm.prank(owner);
         vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
-        new VerifyingPaymaster(entryPoint, address(0), mockUsdc, sessionKeyValidator, owner);
+        new VerifyingPaymaster(
+            entryPoint, address(0), mockUsdc, sessionKeyValidator, settlement, owner
+        );
     }
 
     function test_Constructor_ZeroMockUsdc_Reverts() public {
         vm.prank(owner);
         vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
-        new VerifyingPaymaster(entryPoint, perpEngine, address(0), sessionKeyValidator, owner);
+        new VerifyingPaymaster(
+            entryPoint, perpEngine, address(0), sessionKeyValidator, settlement, owner
+        );
     }
 
     function test_Constructor_ZeroSessionKeyValidator_Reverts() public {
         vm.prank(owner);
         vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
-        new VerifyingPaymaster(entryPoint, perpEngine, mockUsdc, address(0), owner);
+        new VerifyingPaymaster(entryPoint, perpEngine, mockUsdc, address(0), settlement, owner);
+    }
+
+    function test_Constructor_ZeroApproveSpender_Reverts() public {
+        vm.prank(owner);
+        vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
+        new VerifyingPaymaster(
+            entryPoint, perpEngine, mockUsdc, sessionKeyValidator, address(0), owner
+        );
     }
 
     // ─── validatePaymasterUserOp — access control ─────────────────────────────
@@ -229,7 +250,7 @@ contract VerifyingPaymasterTest is Test {
         execs[0] = VerifyingPaymaster.Execution({
             target: mockUsdc,
             value: 0,
-            callData: abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max)
+            callData: abi.encodeWithSelector(APPROVE_SELECTOR, settlement, type(uint256).max)
         });
         execs[1] = VerifyingPaymaster.Execution({
             target: badTarget,
@@ -257,9 +278,9 @@ contract VerifyingPaymasterTest is Test {
     }
 
     function test_ValidatePaymasterUserOp_ApproveOnMockUsdc_Succeeds() public {
-        // Single approve(perpEngine, MaxUint256) — spender == allowedTarget, should pass.
+        // Single approve(settlement, MaxUint256) — spender == approveSpender, should pass.
         bytes memory approveData =
-            abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max);
+            abi.encodeWithSelector(APPROVE_SELECTOR, settlement, type(uint256).max);
         bytes memory execCalldata = abi.encodePacked(mockUsdc, uint256(0), approveData);
         bytes memory callData = abi.encodeWithSelector(EXECUTE_SELECTOR, bytes32(0), execCalldata);
 
@@ -274,7 +295,7 @@ contract VerifyingPaymasterTest is Test {
     }
 
     function test_ValidatePaymasterUserOp_ApproveWrongSpender_Reverts() public {
-        // approve(wrongSpender, MaxUint256) — spender != allowedTarget, must revert.
+        // approve(wrongSpender, MaxUint256) — spender != approveSpender, must revert.
         address wrongSpender = makeAddr("wrongSpender");
         bytes memory approveData =
             abi.encodeWithSelector(APPROVE_SELECTOR, wrongSpender, type(uint256).max);
@@ -409,6 +430,31 @@ contract VerifyingPaymasterTest is Test {
         paymaster.setAllowedTarget(newTarget);
 
         assertEq(paymaster.allowedTarget(), newTarget);
+    }
+
+    // ─── setApproveSpender tests ─────────────────────────────────────────────────
+
+    function test_SetApproveSpender_UpdatesValue() public {
+        address newSpender = makeAddr("newSpender");
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, false);
+        emit IVerifyingPaymaster.ApproveSpenderUpdated(settlement, newSpender);
+        paymaster.setApproveSpender(newSpender);
+
+        assertEq(paymaster.approveSpender(), newSpender);
+    }
+
+    function test_SetApproveSpender_RevertsNonOwner() public {
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
+        paymaster.setApproveSpender(makeAddr("newSpender"));
+    }
+
+    function test_SetApproveSpender_RevertsZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IVerifyingPaymaster.ZeroAddress.selector);
+        paymaster.setApproveSpender(address(0));
     }
 
     // ─── setMockUsdc tests ─────────────────────────────────────────────────────
@@ -872,7 +918,7 @@ contract VerifyingPaymasterTest is Test {
         assertEq(validationData, 0);
     }
 
-    /// @dev Batch UserOp with approve(perpEngine) + grantSession — the delegation flow.
+    /// @dev Batch UserOp with approve(settlement) + grantSession — the delegation flow.
     function _createDelegationBatchUserOp() internal returns (PackedUserOperation memory) {
         bytes4[] memory sels = new bytes4[](2);
         sels[0] = OPEN_POSITION_SELECTOR;
@@ -882,7 +928,7 @@ contract VerifyingPaymasterTest is Test {
         execs[0] = VerifyingPaymaster.Execution({
             target: mockUsdc,
             value: 0,
-            callData: abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max)
+            callData: abi.encodeWithSelector(APPROVE_SELECTOR, settlement, type(uint256).max)
         });
         execs[1] = VerifyingPaymaster.Execution({
             target: sessionKeyValidator,
@@ -921,7 +967,7 @@ contract VerifyingPaymasterTest is Test {
         execs[0] = VerifyingPaymaster.Execution({
             target: mockUsdc,
             value: 0,
-            callData: abi.encodeWithSelector(APPROVE_SELECTOR, perpEngine, type(uint256).max)
+            callData: abi.encodeWithSelector(APPROVE_SELECTOR, settlement, type(uint256).max)
         });
         execs[1] = VerifyingPaymaster.Execution({
             target: user, value: 0, callData: _buildInstallValidationsCallData(vId)

@@ -5,11 +5,18 @@ import { Script, console } from "forge-std/Script.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 import { VerifyingPaymaster } from "src/VerifyingPaymaster.sol";
 
-/// @title DeployPhase2h
-/// @notice Redeploys VerifyingPaymaster to whitelist installModule(1, SKV, initData)
-///         in addition to installValidations.  installModule is now used by the
-///         delegation batch so that Kernel v0.3.1 grants execute-selector access.
-contract DeployPhase2h is Script {
+/// @title DeployPhase2k
+/// @notice Redeploys VerifyingPaymaster with the new `approveSpender` field.
+///
+///         Root fix: The Paymaster previously validated that the USDC approve spender
+///         was `allowedTarget` (PerpEngine), but Settlement is the contract that calls
+///         `safeTransferFrom`. The new `approveSpender` field is set to Settlement so
+///         that approve(Settlement, amount) passes validation.
+///
+///         Reads all existing addresses from deployments/6343.json, deploys a new
+///         VerifyingPaymaster with approveSpender = Settlement, funds the EntryPoint
+///         deposit, and writes the new address back to 6343.json.
+contract DeployPhase2k is Script {
     using stdJson for string;
 
     address private constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
@@ -35,7 +42,7 @@ contract DeployPhase2h is Script {
         console.log("PerpEngine:            ", perpEngine);
         console.log("MockUSDC:              ", usdc);
         console.log("SessionKeyValidator:   ", skv);
-        console.log("Settlement:            ", settlement);
+        console.log("Settlement (approveSpender):", settlement);
         console.log("Old VerifyingPaymaster:", existing.readAddress(".VerifyingPaymaster"));
 
         vm.startBroadcast(deployerKey);
@@ -43,6 +50,7 @@ contract DeployPhase2h is Script {
         VerifyingPaymaster paymaster =
             new VerifyingPaymaster(ENTRY_POINT, perpEngine, usdc, skv, settlement, deployer);
         console.log("New VerifyingPaymaster:", address(paymaster));
+        console.log("  approveSpender:      ", paymaster.approveSpender());
 
         paymaster.deposit{ value: INITIAL_DEPOSIT }();
         console.log("EntryPoint deposit:     0.05 ETH");
