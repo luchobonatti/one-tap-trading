@@ -110,7 +110,21 @@ The lint is configured in `Cargo.toml` but the compiler does not enforce it at t
 **`revokeSession()` must be whitelisted in VerifyingPaymaster.**
 `grantSession` reverts with `SessionAlreadyGranted` if a session is already active. The delegation flow calls `revokeSession()` first — its selector `0xc4605d8c` must be in the paymaster's allowed selectors or you get AA33. Already fixed in the current deployment.
 
-**Current paymaster address: `0x59c4c78aB85d7428F1d0B9Fa972F6cE9131E33B2`** (whitelists: approve, faucet, grantSession, revokeSession, installValidations, openPosition, closePosition).
+**Current paymaster address: `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35`.**
+Whitelisted calls: `openPosition`, `closePosition` on PerpEngine; `approve` (spender must be `allowedTarget`), `faucet` on MockUSDC; `grantSession`, `revokeSession` on SessionKeyValidator; `installValidations`, `installModule` on sender (self-call). See `VerifyingPaymaster._requireAllowedCall()` for the full validation logic.
 
-**DataRunnerPage introduced a wrong digest formula and wrong nonce during the perps migration.**
-The correct signing flow lives in the pre-existing passkey pipeline. Any new page that sends transactions must go through that pipeline, not re-implement signing. See the `bugfix: passkey/session-key pipeline` commit for details.
+**Known issue: approve spender mismatch (opening any position cannot execute).**
+The Paymaster validates that the USDC approve spender is `allowedTarget` (PerpEngine), but `Settlement.depositCollateral()` is who calls `safeTransferFrom`. The approve to PerpEngine is useless, so opening any position (long or short) via `openPosition()` will fail. Fixing this requires adding a separate `approveSpender` field to the Paymaster and redeploying. See issue tracker for the fix PR.
+
+---
+
+## Oracle (RedStone Bolt)
+
+**MockPriceFeed was replaced by RedStone Bolt in Phase 2j.**
+`PriceOracle` now reads from `RedStoneAdapter` (at `0x3812e928c1d55de3707c93d8bc74026a3249134d`) which wraps the live RedStone Bolt ETH/USD feed (`0x9674Dbe42f9996e1470F8eC15a6D0aebA4a93AEb`). No keeper needed — RedStone pushes updates directly.
+
+**RedStone Bolt timestamps are in microseconds on MegaETH.**
+`RedStoneAdapter.latestAnswer()` divides `updatedAt` by `1_000_000` to convert to seconds (matching `block.timestamp`). If you read the raw feed directly, remember the conversion.
+
+**`STALENESS_THRESHOLD = 5 seconds` can cause transient `StalePrice` reverts on Carrot testnet.**
+RedStone Bolt is live (verified 0-1s delta in normal conditions) but Carrot testnet has occasional >5s gaps. Frontend callers should implement retry with backoff for `getPrice()` calls.

@@ -6,7 +6,7 @@
 
 ## Product Context
 
-One Tap Trading is a space-themed trading game on MegaETH. A geometric spaceship flies at the rhythm of the live price — users set their leverage (fuel gauge 2x–30x) and tap LONG or SHORT to open leveraged perpetual futures positions fully on-chain. Zero wallet popups, zero forms, zero financial knowledge required. The aesthetic is 2D flat neon: deep space background, parallax starfield, glowing price trail, neon action buttons.
+One Tap Trading is a space-themed trading game on MegaETH. A geometric spaceship flies at the rhythm of the live price — users set their leverage (fuel gauge 2x–20x) and tap LONG or SHORT to open leveraged perpetual futures positions fully on-chain. Zero wallet popups, zero forms, zero financial knowledge required. The aesthetic is 2D flat neon: deep space background, parallax starfield, glowing price trail, neon action buttons.
 
 ## Stack & Conventions
 

@@ -8,7 +8,7 @@ type Props = {
 };
 
 const MIN = 2;
-const MAX = 30;
+const MAX = 20;
 
 export function FuelGauge({ value, onChange }: Props) {
   const id = useId();

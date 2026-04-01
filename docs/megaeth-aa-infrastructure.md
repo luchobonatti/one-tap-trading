@@ -68,18 +68,20 @@ Full artifact: [`packages/contracts/deployments/6343.json`](../packages/contract
 | Contract | Address |
 |----------|---------|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| SessionKeyValidator | `0x672B55126649951AfbbD13d82015691BC8BAD007` |
-| VerifyingPaymaster | `0xbcB4B1FdEC3958BEAc5542B4752f7FAf4BcaF226` |
+| SessionKeyValidator | `0xb5ea8abff1bd18ceb9ee5b40a55d832bbb5d1b44` |
+| VerifyingPaymaster | `0xe13998047b0b13ad9df7672e28bc4b5ceaa00c35` |
 
 ### Core Protocol
 
 | Contract | Address |
 |----------|---------|
-| PerpEngine | `0xe35486669A5D905CF18D4af477Aaac08dF93Eab0` |
-| Settlement | `0x24354D1022E13f39f330Bbf2210edEEd21422eD5` |
-| PriceOracle | `0x7FBe2a83113A6374964d6fe25C000402471079d4` |
-| MockUSDC | `0xBD2e92B39081A9Dc541A776b5D7B7e0051851CCB` |
-| MockPriceFeed | `0xd152AaBf6e4dA27004dC4a4B29da4a7754318469` |
+| PerpEngine | `0x3b94b364697714620c4596e1c51e5b24a0964204` |
+| Settlement | `0x24354d1022e13f39f330bbf2210edeed21422ed5` |
+| PriceOracle | `0xf5e08914893f87f687f6f39799c32ed2210f410a` |
+| RedStoneAdapter | `0x3812e928c1d55de3707c93d8bc74026a3249134d` |
+| MockUSDC | `0xbd2e92b39081a9dc541a776b5d7b7e0051851ccb` |
+
+Note: `MockPriceFeed` (`0x85f5dc082ca674f5421fe93e106022a2a1ba1a30`) remains deployed but is deprecated — replaced by `RedStoneAdapter` in Phase 2j.
 
 ---
 
@@ -106,7 +108,7 @@ lib/trading/submit.ts — openTrade({ isLong, collateral, leverage, accountAddre
     │       → paymaster = VerifyingPaymaster (sponsors gas)
     │
     ├─ 5. signUserOp(userOp, session)
-    │       → concat([sessionKeyAddress (20 bytes), ecdsaSign(userOpHash) (65 bytes)])
+    │       → mode(1B 0x01) + validatorAddr(20B) + sessionKeyAddr(20B) + ecdsaSig(65B) = 106 bytes
     │       → NO wallet popup
     │
     └─ 6. submitUserOp(signedOp)
@@ -134,5 +136,7 @@ struct PriceBounds {
 ### Session key prerequisites
 
 Before any trade, the smart account must have:
-1. Approved PerpEngine to spend USDC (`ERC20.approve(PerpEngine, amount)`)
+1. Approved USDC spending (`ERC20.approve(spender, amount)`) — **Note:** Settlement is who
+   calls `safeTransferFrom`, but the VerifyingPaymaster currently enforces `spender == PerpEngine`.
+   This is a known mismatch that requires a Paymaster contract update to fix (see `docs/gotchas.md`).
 2. Granted a session key via `SessionKeyValidator.grantSession(...)` (done by `DelegateModal`)

@@ -55,11 +55,6 @@ interface IVerifyingPaymaster {
     /// @param caller The address that called the function.
     error NotEntryPoint(address caller);
 
-    /// @notice Thrown when the paymaster does not have sufficient deposit to cover gas.
-    /// @param available The available deposit balance.
-    /// @param required The required amount to cover gas.
-    error InsufficientDeposit(uint256 available, uint256 required);
-
     // ─── Owner-only functions ─────────────────────────────────────────────────
 
     /// @notice Update the allowed trading target address (PerpEngine).

@@ -18,9 +18,9 @@ describe("FuelGauge", () => {
     expect(onChange).toHaveBeenCalledWith(15);
   });
 
-  it("applies animate-pulse class at max leverage (30)", () => {
-    render(<FuelGauge value={30} onChange={vi.fn()} />);
-    const label = screen.getByText("30×");
+  it("applies animate-pulse class at max leverage (20)", () => {
+    render(<FuelGauge value={20} onChange={vi.fn()} />);
+    const label = screen.getByText("20×");
     expect(label.className).toContain("animate-pulse");
   });
 
@@ -30,10 +30,10 @@ describe("FuelGauge", () => {
     expect(label.className).not.toContain("animate-pulse");
   });
 
-  it("slider has min=2 and max=30", () => {
+  it("slider has min=2 and max=20", () => {
     render(<FuelGauge value={5} onChange={vi.fn()} />);
     const slider = screen.getByRole("slider");
     expect(slider).toHaveAttribute("min", "2");
-    expect(slider).toHaveAttribute("max", "30");
+    expect(slider).toHaveAttribute("max", "20");
   });
 });
